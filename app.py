@@ -7,7 +7,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Image to Google Sheet", layout="centered")
+st.set_page_config(page_title="BUSINESS CARD UPLOAD", layout="centered")
 
 # ---------------- HEADER (LOGO + COMPANY NAME) ----------------
 LOGO_URL = "https://drive.google.com/uc?export=view&id=1xq5ehfCCw8Ncv5FxS845Oxh0eAjxR5-I"
