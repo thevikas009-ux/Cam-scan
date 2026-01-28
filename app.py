@@ -6,46 +6,18 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import io
-import re  # For field extraction
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="📸 OCR to Google Sheet", layout="centered")
-st.title("📸 Image / Camera to Google Sheet App")
+st.set_page_config(page_title="Image to Google Sheet", layout="centered")
+st.title("📸 Image to Google Sheet App")
 
-# ---------------- OCR READER ----------------
+# ---------------- OCR ----------------
 reader = easyocr.Reader(['en'], gpu=False)
 
 def extract_text(image):
     img_array = np.array(image)
     result = reader.readtext(img_array, detail=0)
-    return " ".join(result)
-
-# ---------------- FIELD EXTRACTION ----------------
-def extract_fields(text):
-    lines = text.split("\n")
-    
-    # Initialize empty fields
-    company = name = phone = email = designation = address = ""
-    
-    # Extract phone numbers
-    phone_match = re.findall(r'\+?\d[\d\s\-]{7,}\d', text)
-    phone = phone_match[0] if phone_match else ""
-    
-    # Extract emails
-    email_match = re.findall(r'\S+@\S+', text)
-    email = email_match[0] if email_match else ""
-    
-    # Heuristic: first line = company, second = name, third = designation
-    if len(lines) > 0:
-        company = lines[0]
-    if len(lines) > 1:
-        name = lines[1]
-    if len(lines) > 2:
-        designation = lines[2]
-    if len(lines) > 3:
-        address = " ".join(lines[3:])
-    
-    return company, name, phone, email, designation, address
+    return "\n".join(result)   # FULL TEXT AS-IS
 
 # ---------------- GOOGLE SHEET AUTH ----------------
 scope = [
@@ -58,43 +30,49 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
-# ---------------- FILE UPLOAD OR CAMERA ----------------
-uploaded_file = st.file_uploader(
-    "Upload image (jpg / png / jpeg)",
-    type=["jpg", "png", "jpeg"]
+# ---------------- IMAGE SOURCE OPTION ----------------
+option = st.radio(
+    "Choose image source",
+    ["Upload Image", "Open Camera"],
+    horizontal=True
 )
 
-camera_image = st.camera_input("Or take a picture with your camera")
+image = None
+file_name = ""
 
-# Use whichever the user provided
-image_file = uploaded_file or camera_image
+# ---------------- UPLOAD IMAGE ----------------
+if option == "Upload Image":
+    uploaded_file = st.file_uploader(
+        "Upload image (jpg / png / jpeg)",
+        type=["jpg", "png", "jpeg"]
+    )
+    if uploaded_file:
+        image = Image.open(uploaded_file)
+        file_name = uploaded_file.name
 
-if image_file:
-    image = Image.open(io.BytesIO(image_file.read()))
+# ---------------- CAMERA (ONLY WHEN SELECTED) ----------------
+if option == "Open Camera":
+    camera_image = st.camera_input("Click to open camera")
+    if camera_image:
+        image = Image.open(camera_image)
+        file_name = "camera_image"
+
+# ---------------- PROCESS IMAGE ----------------
+if image:
     st.image(image, use_column_width=True)
 
-    # OCR extraction
     text = extract_text(image)
 
-    st.subheader("Extracted Text")
-    st.text_area("OCR Output", text, height=200)
+    st.subheader("Extracted Text (Full Raw Data)")
+    st.text_area("OCR Output", text, height=250)
 
-    # ---------------- SAVE TO GOOGLE SHEET ----------------
     if st.button("Save to Google Sheet"):
         try:
-            company, name, phone, email, designation, address = extract_fields(text)
-            
-            # Append data directly, no header required
             sheet.append_row([
-                company,
-                name,
-                phone,
-                email,
-                designation,
-                address,
-                image_file.name if uploaded_file else "Camera Capture",
+                text,
+                file_name,
                 str(datetime.now())
             ])
-            st.success("✅ Data saved to Google Sheet")
+            st.success("✅ Full OCR data saved to Google Sheet")
         except Exception as e:
-            st.error(f"Error saving to Sheet: {e}")
+            st.error(f"❌ Error: {e}")
