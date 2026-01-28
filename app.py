@@ -12,83 +12,64 @@ st.set_page_config(
     layout="centered"
 )
 
-# ---------------- HEADER (BIG LOGO + COMPANY NAME) ----------------
-st.markdown(
-    """
-    <style>
-    .header-container {
-        display: flex;
-        align-items: center;
-        gap: 20px;
-        margin-bottom: 10px;
-    }
-    .company-name {
-        font-size: 28px;
-        font-weight: 700;
-        line-height: 1.2;
-    }
-    .tagline {
-        color: gray;
-        font-size: 14px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
+# ---------------- HEADER ----------------
 col1, col2 = st.columns([2, 5])
-
 with col1:
-    st.image("logo.png", width=160)  # 🔥 LOGO SIZE INCREASED
+    st.image("logo.png", width=180)
 
 with col2:
     st.markdown(
         """
-        <div class="header-container">
-            <div>
-                <div class="company-name">
-                    ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
-                </div>
-                <div class="tagline">
-                    Smart OCR • Image Upload System
-                </div>
-            </div>
-        </div>
+        <h2 style="margin-bottom:0;">
+        ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
+        </h2>
+        <p style="color:gray;margin-top:4px;">
+        Image OCR • Camera Upload System
+        </p>
         """,
         unsafe_allow_html=True
     )
 
 st.divider()
+st.title("📸 Image to Google Sheet")
 
-# ---------------- APP TITLE ----------------
-st.title("📸 Image to Google Sheet (OCR)")
-
-# ---------------- OCR LOAD ----------------
+# ---------------- OCR LOAD (SAFE) ----------------
 @st.cache_resource
 def load_ocr():
     return easyocr.Reader(['en'], gpu=False)
 
 reader = load_ocr()
 
+# ---------------- IMAGE RESIZE (CRITICAL FIX) ----------------
+def resize_image(image, max_size=1024):
+    if max(image.size) > max_size:
+        ratio = max_size / max(image.size)
+        new_size = (int(image.size[0]*ratio), int(image.size[1]*ratio))
+        return image.resize(new_size)
+    return image
+
 def extract_text(image):
-    img_array = np.array(image.convert("RGB"))
-    result = reader.readtext(img_array, detail=0, paragraph=True)
+    image = resize_image(image)
+    img = np.array(image.convert("RGB"))
+    result = reader.readtext(img, detail=0, paragraph=True)
     return "\n".join(result)
 
-# ---------------- GOOGLE SHEET AUTH ----------------
+# ---------------- GOOGLE SHEET ----------------
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive",
 ]
 
-creds_dict = st.secrets["gcp_service_account"]
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(
+    st.secrets["gcp_service_account"],
+    scope
+)
 client = gspread.authorize(creds)
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
-# ---------------- IMAGE SOURCE ----------------
+# ---------------- SOURCE SELECT ----------------
 option = st.radio(
-    "Choose image source",
+    "Select Image Source",
     ["Upload Image", "Open Camera"],
     horizontal=True
 )
@@ -96,20 +77,19 @@ option = st.radio(
 image = None
 file_name = ""
 
-# ---------------- FILE UPLOAD ----------------
+# ---------------- UPLOAD ----------------
 if option == "Upload Image":
-    uploaded_file = st.file_uploader(
-        "Upload image (jpg / png / jpeg)",
-        type=["jpg", "png", "jpeg"]
+    uploaded = st.file_uploader(
+        "Upload Image (jpg / png)",
+        type=["jpg", "jpeg", "png"]
     )
-
-    if uploaded_file:
-        image = Image.open(uploaded_file)
-        file_name = uploaded_file.name
+    if uploaded:
+        image = Image.open(uploaded)
+        file_name = uploaded.name
 
 # ---------------- CAMERA ----------------
 if option == "Open Camera":
-    cam = st.camera_input("Click button to open camera")
+    cam = st.camera_input("Tap to open camera")
     if cam:
         image = Image.open(cam)
         file_name = "camera_image"
@@ -118,11 +98,15 @@ if option == "Open Camera":
 if image:
     st.image(image, use_column_width=True)
 
-    with st.spinner("🔍 Scanning image..."):
-        text = extract_text(image)
+    with st.spinner("🔍 Reading image..."):
+        try:
+            text = extract_text(image)
+        except Exception as e:
+            st.error("❌ Image processing failed. Please use smaller image.")
+            st.stop()
 
-    st.subheader("Extracted Full Text")
-    st.text_area("OCR Result", text, height=260)
+    st.subheader("Extracted Text")
+    st.text_area("OCR Output", text, height=250)
 
     if st.button("Save to Google Sheet"):
         try:
@@ -131,6 +115,6 @@ if image:
                 file_name,
                 str(datetime.now())
             ])
-            st.success("✅ Data saved successfully")
+            st.success("✅ Saved successfully")
         except Exception as e:
-            st.error(f"❌ Error: {e}")
+            st.error("❌ Google Sheet error")
