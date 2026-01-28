@@ -185,7 +185,7 @@ if image:
     designation = extract_designation(text)
     address = extract_address(text)
 
-    if st.button("Save to Google Sheet"):
+    if st.button("Submit"):
         try:
             sheet.append_row([
                 text, file_name, str(datetime.now()),
