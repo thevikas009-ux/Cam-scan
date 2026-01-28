@@ -108,13 +108,19 @@ if image:
     st.subheader("Extracted Text")
     st.text_area("OCR Output", text, height=250)
 
-    if st.button("Save to Google Sheet"):
-        try:
-            sheet.append_row([
-                text,
-                file_name,
-                str(datetime.now())
-            ])
-            st.success("✅ Saved successfully")
-        except Exception as e:
-            st.error("❌ Google Sheet error")
+   if st.button("Save to Google Sheet"):
+    try:
+        sheet.append_row([
+            text,
+            file_name,
+            str(datetime.now())
+        ])
+
+        st.success("✅ Saved successfully")
+
+        # ⏳ wait 2 sec then reset app
+        time.sleep(2)
+        st.rerun()
+
+    except Exception as e:
+        st.error("❌ Google Sheet error")
