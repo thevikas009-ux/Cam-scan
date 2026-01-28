@@ -193,7 +193,7 @@ if image:
             ])
             st.success("✅ Saved successfully")
             time.sleep(2)
-            st.experimental_rerun()  # auto refresh page for new upload
+            st.rerun()  # <-- use this in latest Streamlit
 
         except Exception as e:
             st.error(f"❌ Failed to save: {e}")
