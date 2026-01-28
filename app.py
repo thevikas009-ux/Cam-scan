@@ -9,19 +9,39 @@ from datetime import datetime
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Image to Google Sheet", layout="centered")
 
-# ---------------- COMPANY LOGO ----------------
+# ---------------- HEADER BAND (LOGO + COMPANY NAME) ----------------
 LOGO_URL = "https://drive.google.com/uc?export=view&id=1xq5ehfCCw8Ncv5FxS845Oxh0eAjxR5-I"
 
-st.image(LOGO_URL, width=160)
 st.markdown(
-    "<h4 style='text-align:center;'>ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h4>",
+    f"""
+    <div style="
+        background-color:#0f172a;
+        padding:15px;
+        border-radius:12px;
+        display:flex;
+        align-items:center;
+        gap:15px;
+        justify-content:center;
+    ">
+        <img src="{LOGO_URL}" width="55"/>
+        <div style="color:white;">
+            <div style="font-size:18px;font-weight:700;">
+                ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
+            </div>
+            <div style="font-size:12px;opacity:0.8;">
+                Smart OCR • Image to Google Sheet
+            </div>
+        </div>
+    </div>
+    """,
     unsafe_allow_html=True
 )
-st.divider()
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 st.title("📸 Image to Google Sheet App")
 
-# ---------------- OCR (CACHED) ----------------
+# ---------------- OCR (CACHED FOR MOBILE) ----------------
 @st.cache_resource
 def load_ocr():
     return easyocr.Reader(['en'], gpu=False)
@@ -70,7 +90,7 @@ if option == "Upload Image":
         image = Image.open(uploaded_file)
         file_name = uploaded_file.name
 
-# ---------------- CAMERA (ON CLICK ONLY) ----------------
+# ---------------- CAMERA (CLICK TO OPEN) ----------------
 if option == "Open Camera":
     camera_image = st.camera_input("Click to open camera")
     if camera_image:
