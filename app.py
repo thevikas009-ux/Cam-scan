@@ -10,7 +10,7 @@ from datetime import datetime
 st.set_page_config(page_title="Image to Google Sheet", layout="centered")
 
 # ---------------- COMPANY LOGO ----------------
-LOGO_URL = "https://drive.google.com/file/d/1xq5ehfCCw8Ncv5FxS845Oxh0eAjxR5-I/view?usp=sharing"
+LOGO_URL = "https://drive.google.com/uc?export=view&id=1xq5ehfCCw8Ncv5FxS845Oxh0eAjxR5-I"
 
 st.image(LOGO_URL, width=160)
 st.markdown(
