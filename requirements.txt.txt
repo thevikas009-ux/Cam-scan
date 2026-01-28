@@ -1,6 +1,7 @@
 streamlit
-google-cloud-vision
-gspread
-oauth2client
+easyocr
+numpy
 pillow
-pandas
+gspread
+google-auth
+
