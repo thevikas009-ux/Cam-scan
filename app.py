@@ -95,4 +95,22 @@ if image:
     st.image(image, use_column_width=True)
 
     with st.spinner("🔍 Scanning image..."):
-        text = ext
+        text = extract_text(image)
+
+    st.subheader("Extracted Text")
+    st.text_area("OCR Output", text, height=250)
+
+    if st.button("Save to Google Sheet"):
+        try:
+            sheet.append_row([
+                text,
+                file_name,
+                str(datetime.now())
+            ])
+
+            st.success("✅ Saved successfully")
+            time.sleep(2)
+            st.rerun()
+
+        except Exception:
+            st.error("❌ Error saving to Google Sheet")
