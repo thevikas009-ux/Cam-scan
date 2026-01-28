@@ -1,7 +1,7 @@
 import streamlit as st
 import easyocr
 import numpy as np
-from PIL import Image
+from PIL import Image, ExifTags
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
@@ -26,14 +26,14 @@ with col2:
         ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
         </h2>
         <p style="color:gray;margin-top:4px;">
-        Smart OCR • Image to Google Sheet
+        Smart OCR • Any Angle Card Scanner
         </p>
         """,
         unsafe_allow_html=True
     )
 
 st.divider()
-st.title("📸 Image OCR & Structured Sheet Upload")
+st.title("📸 Visiting Card OCR to Google Sheet")
 
 # ---------------- OCR ----------------
 @st.cache_resource
@@ -42,15 +42,45 @@ def load_ocr():
 
 reader = load_ocr()
 
-def extract_text(image):
-    img_array = np.array(image.convert("RGB"))
-    result = reader.readtext(img_array, detail=0, paragraph=True)
-    return "\n".join(result)
+# ---------------- IMAGE HELPERS ----------------
+def fix_orientation(image):
+    try:
+        exif = image._getexif()
+        if exif:
+            for tag, value in ExifTags.TAGS.items():
+                if value == "Orientation":
+                    orientation_key = tag
+                    break
+            orientation = exif.get(orientation_key)
+            if orientation == 3:
+                image = image.rotate(180, expand=True)
+            elif orientation == 6:
+                image = image.rotate(270, expand=True)
+            elif orientation == 8:
+                image = image.rotate(90, expand=True)
+    except Exception:
+        pass
+    return image
+
+def ocr_multi_angle(image):
+    best_text = ""
+    max_len = 0
+
+    for angle in [0, 90, 180, 270]:
+        rotated = image.rotate(angle, expand=True)
+        img_array = np.array(rotated.convert("RGB"))
+        result = reader.readtext(img_array, detail=0, paragraph=True)
+        text = "\n".join(result)
+
+        if len(text) > max_len:
+            max_len = len(text)
+            best_text = text
+
+    return best_text
 
 # ---------------- PARSING FUNCTIONS ----------------
 def extract_company(text):
-    lines = text.split("\n")
-    for line in lines:
+    for line in text.split("\n"):
         if len(line.strip()) > 2 and line.isupper():
             return line.strip()
     return ""
@@ -63,29 +93,28 @@ def extract_email(text):
     match = re.search(r'[\w\.-]+@[\w\.-]+', text)
     return match.group(0) if match else ""
 
-def extract_name(text, company_name):
-    # Name = line before company name OR first line not company/email/phone
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
-    for line in lines:
-        if line != company_name and not re.search(r'[\d@]', line):
-            return line
+def extract_website(text):
+    match = re.search(r'(https?://\S+|www\.\S+)', text, re.IGNORECASE)
+    return match.group(0) if match else ""
+
+def extract_name(text, company):
+    for line in text.split("\n"):
+        if line != company and not re.search(r'[\d@]', line):
+            return line.strip()
     return ""
 
 def extract_designation(text):
-    lines = text.split("\n")
-    for line in lines:
-        line_lower = line.lower()
-        if any(keyword in line_lower for keyword in ["manager", "director", "ceo", "founder", "engineer", "officer"]):
+    for line in text.split("\n"):
+        if any(k in line.lower() for k in ["manager", "director", "engineer", "officer", "founder", "ceo"]):
             return line.strip()
     return ""
 
 def extract_address(text):
-    lines = text.split("\n")
-    address_lines = []
-    for line in lines:
-        if any(c.isdigit() for c in line) or any(word in line.lower() for word in ["street", "road", "lane", "pvt", "ltd", "city", "zip", "state"]):
-            address_lines.append(line.strip())
-    return ", ".join(address_lines) if address_lines else ""
+    addr = []
+    for line in text.split("\n"):
+        if any(c.isdigit() for c in line):
+            addr.append(line.strip())
+    return ", ".join(addr)
 
 # ---------------- GOOGLE SHEET ----------------
 scope = [
@@ -110,7 +139,6 @@ option = st.radio(
 image = None
 file_name = ""
 
-# ---------------- UPLOAD IMAGE ----------------
 if option == "Upload Image":
     uploaded_file = st.file_uploader(
         "Upload image",
@@ -120,7 +148,6 @@ if option == "Upload Image":
         image = Image.open(uploaded_file)
         file_name = uploaded_file.name
 
-# ---------------- CAMERA ----------------
 if option == "Open Camera":
     cam = st.camera_input("Click to open camera")
     if cam:
@@ -129,37 +156,39 @@ if option == "Open Camera":
 
 # ---------------- PROCESS ----------------
 if image:
+    image = fix_orientation(image)
     st.image(image, use_column_width=True)
 
-    with st.spinner("🔍 Scanning image..."):
-        text = extract_text(image)
+    with st.spinner("🔍 Reading card (any angle supported)..."):
+        text = ocr_multi_angle(image)
 
-    st.subheader("Extracted Full Text")
+    st.subheader("Extracted Text")
     st.text_area("OCR Output", text, height=260)
 
-    # ---------------- AUTO PARSE ----------------
-    company_name = extract_company(text)
+    company = extract_company(text)
     phone = extract_phone(text)
     email = extract_email(text)
-    name = extract_name(text, company_name)
+    website = extract_website(text)
+    name = extract_name(text, company)
     designation = extract_designation(text)
     address = extract_address(text)
 
     if st.button("Save to Google Sheet"):
         try:
             sheet.append_row([
-                text,            # A: Full OCR
-                file_name,       # B: File Name
-                str(datetime.now()),  # C: Timestamp
-                company_name,    # D: Company Name
-                phone,           # E: Phone Number
-                email,           # F: Email
-                name,            # G: Name
-                designation,     # H: Designation
-                address          # I: Address
+                text,
+                file_name,
+                str(datetime.now()),
+                company,
+                phone,
+                email,
+                name,
+                designation,
+                address,
+                website
             ])
             st.success("✅ Saved successfully")
             time.sleep(2)
             st.rerun()
-        except Exception as e:
-            st.error(f"❌ Error saving: {e}")
+        except Exception:
+            st.error("❌ Failed to save data")
