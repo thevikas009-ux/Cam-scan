@@ -5,6 +5,7 @@ from PIL import Image
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+import time
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(
@@ -14,6 +15,7 @@ st.set_page_config(
 
 # ---------------- HEADER ----------------
 col1, col2 = st.columns([2, 5])
+
 with col1:
     st.image("logo.png", width=180)
 
@@ -24,34 +26,26 @@ with col2:
         ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
         </h2>
         <p style="color:gray;margin-top:4px;">
-        Image OCR • Camera Upload System
+        Image to Google Sheet OCR System
         </p>
         """,
         unsafe_allow_html=True
     )
 
 st.divider()
+
 st.title("📸 Image to Google Sheet")
 
-# ---------------- OCR LOAD (SAFE) ----------------
+# ---------------- OCR ----------------
 @st.cache_resource
 def load_ocr():
     return easyocr.Reader(['en'], gpu=False)
 
 reader = load_ocr()
 
-# ---------------- IMAGE RESIZE (CRITICAL FIX) ----------------
-def resize_image(image, max_size=1024):
-    if max(image.size) > max_size:
-        ratio = max_size / max(image.size)
-        new_size = (int(image.size[0]*ratio), int(image.size[1]*ratio))
-        return image.resize(new_size)
-    return image
-
 def extract_text(image):
-    image = resize_image(image)
-    img = np.array(image.convert("RGB"))
-    result = reader.readtext(img, detail=0, paragraph=True)
+    img_array = np.array(image.convert("RGB"))
+    result = reader.readtext(img_array, detail=0, paragraph=True)
     return "\n".join(result)
 
 # ---------------- GOOGLE SHEET ----------------
@@ -64,12 +58,13 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
     st.secrets["gcp_service_account"],
     scope
 )
+
 client = gspread.authorize(creds)
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
-# ---------------- SOURCE SELECT ----------------
+# ---------------- IMAGE SOURCE ----------------
 option = st.radio(
-    "Select Image Source",
+    "Choose Image Source",
     ["Upload Image", "Open Camera"],
     horizontal=True
 )
@@ -77,19 +72,20 @@ option = st.radio(
 image = None
 file_name = ""
 
-# ---------------- UPLOAD ----------------
+# ---------------- UPLOAD IMAGE ----------------
 if option == "Upload Image":
-    uploaded = st.file_uploader(
-        "Upload Image (jpg / png)",
-        type=["jpg", "jpeg", "png"]
+    uploaded_file = st.file_uploader(
+        "Upload image",
+        type=["jpg", "png", "jpeg"]
     )
-    if uploaded:
-        image = Image.open(uploaded)
-        file_name = uploaded.name
+
+    if uploaded_file:
+        image = Image.open(uploaded_file)
+        file_name = uploaded_file.name
 
 # ---------------- CAMERA ----------------
 if option == "Open Camera":
-    cam = st.camera_input("Tap to open camera")
+    cam = st.camera_input("Click to open camera")
     if cam:
         image = Image.open(cam)
         file_name = "camera_image"
@@ -98,29 +94,5 @@ if option == "Open Camera":
 if image:
     st.image(image, use_column_width=True)
 
-    with st.spinner("🔍 Reading image..."):
-        try:
-            text = extract_text(image)
-        except Exception as e:
-            st.error("❌ Image processing failed. Please use smaller image.")
-            st.stop()
-
-    st.subheader("Extracted Text")
-    st.text_area("OCR Output", text, height=250)
-
-   if st.button("Save to Google Sheet"):
-    try:
-        sheet.append_row([
-            text,
-            file_name,
-            str(datetime.now())
-        ])
-
-        st.success("✅ Saved successfully")
-
-        # ⏳ wait 2 sec then reset app
-        time.sleep(2)
-        st.rerun()
-
-    except Exception as e:
-        st.error("❌ Google Sheet error")
+    with st.spinner("🔍 Scanning image..."):
+        text = ext
