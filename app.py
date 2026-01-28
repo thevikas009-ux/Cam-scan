@@ -32,7 +32,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
 # Open your Google Sheet
-sheet = client.open_by_key(st.secrets["sheet_id"]).Sheet1
+sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
 # ---------------- FILE UPLOAD ----------------
 uploaded_file = st.file_uploader(
