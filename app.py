@@ -49,10 +49,9 @@ def extract_text(image):
 
 # ---------------- PARSING FUNCTIONS ----------------
 def extract_company(text):
-    # assume first line is company name
     lines = text.split("\n")
     for line in lines:
-        if len(line.strip()) > 2 and line.isupper():  # uppercase heuristic
+        if len(line.strip()) > 2 and line.isupper():
             return line.strip()
     return ""
 
@@ -63,6 +62,30 @@ def extract_phone(text):
 def extract_email(text):
     match = re.search(r'[\w\.-]+@[\w\.-]+', text)
     return match.group(0) if match else ""
+
+def extract_name(text, company_name):
+    # Name = line before company name OR first line not company/email/phone
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    for line in lines:
+        if line != company_name and not re.search(r'[\d@]', line):
+            return line
+    return ""
+
+def extract_designation(text):
+    lines = text.split("\n")
+    for line in lines:
+        line_lower = line.lower()
+        if any(keyword in line_lower for keyword in ["manager", "director", "ceo", "founder", "engineer", "officer"]):
+            return line.strip()
+    return ""
+
+def extract_address(text):
+    lines = text.split("\n")
+    address_lines = []
+    for line in lines:
+        if any(c.isdigit() for c in line) or any(word in line.lower() for word in ["street", "road", "lane", "pvt", "ltd", "city", "zip", "state"]):
+            address_lines.append(line.strip())
+    return ", ".join(address_lines) if address_lines else ""
 
 # ---------------- GOOGLE SHEET ----------------
 scope = [
@@ -108,16 +131,19 @@ if option == "Open Camera":
 if image:
     st.image(image, use_column_width=True)
 
-    with st.spinner("🔍 Reading image..."):
+    with st.spinner("🔍 Scanning image..."):
         text = extract_text(image)
 
-    st.subheader("Extracted Text")
+    st.subheader("Extracted Full Text")
     st.text_area("OCR Output", text, height=260)
 
-    # ---------------- EXTRACT FIELDS ----------------
+    # ---------------- AUTO PARSE ----------------
     company_name = extract_company(text)
     phone = extract_phone(text)
     email = extract_email(text)
+    name = extract_name(text, company_name)
+    designation = extract_designation(text)
+    address = extract_address(text)
 
     if st.button("Save to Google Sheet"):
         try:
@@ -127,11 +153,13 @@ if image:
                 str(datetime.now()),  # C: Timestamp
                 company_name,    # D: Company Name
                 phone,           # E: Phone Number
-                email            # F: Email
+                email,           # F: Email
+                name,            # G: Name
+                designation,     # H: Designation
+                address          # I: Address
             ])
             st.success("✅ Saved successfully")
             time.sleep(2)
             st.rerun()
-
         except Exception as e:
             st.error(f"❌ Error saving: {e}")
