@@ -7,25 +7,23 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="BUSINESS CARD UPLOAD", layout="centered")
+st.set_page_config(page_title="Image to Google Sheet", layout="centered")
 
-# ---------------- HEADER (LOGO + COMPANY NAME) ----------------
-LOGO_URL = "https://drive.google.com/uc?export=view&id=1xq5ehfCCw8Ncv5FxS845Oxh0eAjxR5-I"
-
+# ---------------- HEADER (LOCAL LOGO + COMPANY NAME) ----------------
 col1, col2 = st.columns([1, 4])
 
 with col1:
-    st.image(LOGO_URL, width=80)
+    st.image("logo.png", width=90)
 
 with col2:
     st.markdown(
         """
-        <div style="padding-top:8px">
+        <div style="padding-top:10px">
             <h3 style="margin-bottom:0;">
                 ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
             </h3>
             <p style="margin-top:2px;color:gray;">
-                Smart OCR • Image to Google Sheet
+                Smart OCR • Image Upload System
             </p>
         </div>
         """,
@@ -34,7 +32,7 @@ with col2:
 
 st.divider()
 
-st.title("📸 Image to Google Sheet App")
+st.title("📸 Image Upload & OCR to Google Sheet")
 
 # ---------------- OCR (CACHED FOR MOBILE) ----------------
 @st.cache_resource
