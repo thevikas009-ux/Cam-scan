@@ -193,26 +193,31 @@ if st.session_state.image:
     designation = extract_designation(text)
     address = extract_address(text)
 
-    if st.button("✅ Save to Google Sheet"):
-        try:
-            sheet.append_row([
-                text,
-                st.session_state.file_name,
-                str(datetime.now()),
-                company,
-                phones,
-                emails,
-                name,
-                designation,
-                address,
-                websites
-            ])
+   if st.button("✅ Submit"):
+    try:
+        sheet.append_row([
+            text,
+            st.session_state.file_name,
+            str(datetime.now()),
+            company,
+            phones,
+            emails,
+            name,
+            designation,
+            address,
+            websites
+        ])
 
-            st.success("🎉 Saved successfully!")
-            st.session_state.image = None
-            st.session_state.file_name = ""
-            time.sleep(1)
-            st.rerun()
+        st.success("✅ Saved successfully")
 
-        except Exception as e:
-            st.error(f"❌ Failed to save: {e}")
+        # 🔴 RESET EVERYTHING
+        st.session_state.image = None
+        st.session_state.file_name = ""
+
+        time.sleep(1)
+
+        # 🔴 HARD STOP + RELOAD
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"❌ Failed to save: {e}")
