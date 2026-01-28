@@ -5,13 +5,23 @@ from PIL import Image
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
-import io
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Image to Google Sheet", layout="centered")
+
+# ---------------- COMPANY LOGO ----------------
+LOGO_URL = "https://drive.google.com/uc?export=view&id=1iYnejBecxl8o1sYj_BTS5ax_ZRypCmef"
+
+st.image(LOGO_URL, width=160)
+st.markdown(
+    "<h4 style='text-align:center;'>Your Company Name</h4>",
+    unsafe_allow_html=True
+)
+st.divider()
+
 st.title("📸 Image to Google Sheet App")
 
-# ---------------- OCR ----------------
+# ---------------- OCR (CACHED) ----------------
 @st.cache_resource
 def load_ocr():
     return easyocr.Reader(['en'], gpu=False)
@@ -19,9 +29,9 @@ def load_ocr():
 reader = load_ocr()
 
 def extract_text(image):
-    img_array = np.array(image)
-    result = reader.readtext(img_array, detail=0)
-    return "\n".join(result)   # FULL TEXT AS-IS
+    img_array = np.array(image.convert("RGB"))
+    result = reader.readtext(img_array, detail=0, paragraph=True)
+    return "\n".join(result)
 
 # ---------------- GOOGLE SHEET AUTH ----------------
 scope = [
@@ -43,6 +53,7 @@ option = st.radio(
 
 image = None
 file_name = ""
+uploaded_file = None
 
 # ---------------- UPLOAD IMAGE ----------------
 if option == "Upload Image":
@@ -50,11 +61,16 @@ if option == "Upload Image":
         "Upload image (jpg / png / jpeg)",
         type=["jpg", "png", "jpeg"]
     )
+
     if uploaded_file:
+        if uploaded_file.size > 4 * 1024 * 1024:
+            st.error("❌ Image too large. Please upload image under 4MB")
+            st.stop()
+
         image = Image.open(uploaded_file)
         file_name = uploaded_file.name
 
-# ---------------- CAMERA (ONLY WHEN SELECTED) ----------------
+# ---------------- CAMERA (ON CLICK ONLY) ----------------
 if option == "Open Camera":
     camera_image = st.camera_input("Click to open camera")
     if camera_image:
@@ -62,19 +78,14 @@ if option == "Open Camera":
         file_name = "camera_image"
 
 # ---------------- PROCESS IMAGE ----------------
-MAX_SIZE_MB = 4
-if uploaded_file and uploaded_file.size > MAX_SIZE_MB * 1024 * 1024:
-    st.error("❌ Image too large. Please upload image under 4MB")
-    st.stop()
 if image:
     st.image(image, use_column_width=True)
 
     with st.spinner("🔍 Scanning image, please wait..."):
-    text = extract_text(image)
-
+        text = extract_text(image)
 
     st.subheader("Extracted Text (Full Raw Data)")
-    st.text_area("OCR Output", text, height=250)
+    st.text_area("OCR Output", text, height=260)
 
     if st.button("Save to Google Sheet"):
         try:
@@ -83,6 +94,6 @@ if image:
                 file_name,
                 str(datetime.now())
             ])
-            st.success("✅ Full OCR data saved to Google Sheet")
+            st.success("✅ Data saved to Google Sheet")
         except Exception as e:
-            st.error(f"❌ Error: {e}")
+            st.error(f"❌ Error saving data: {e}")
