@@ -63,34 +63,27 @@ def fix_orientation(image):
     return image
 
 def enhance_image(image):
-    # Convert to grayscale
-    img = image.convert("L")
-    # Increase contrast
+    img = image.convert("L")  # grayscale
     enhancer = ImageEnhance.Contrast(img)
     img = enhancer.enhance(1.8)
-    # Resize if too small
     max_size = 1024
     if max(img.size) > max_size:
         ratio = max_size / max(img.size)
-        new_size = (int(img.size[0]*ratio), int(img.size[1]*ratio))
-        img = img.resize(new_size)
+        img = img.resize((int(img.size[0]*ratio), int(img.size[1]*ratio)))
     return img
 
 def ocr_multi_angle(image):
     best_text = ""
     max_len = 0
-
     for angle in [0, 90, 180, 270]:
         rotated = image.rotate(angle, expand=True)
         processed = enhance_image(rotated)
         img_array = np.array(processed.convert("RGB"))
         result = reader.readtext(img_array, detail=0, paragraph=True)
         text = "\n".join(result)
-
         if len(text) > max_len:
             max_len = len(text)
             best_text = text
-
     return best_text
 
 # ---------------- PARSING FUNCTIONS ----------------
@@ -151,24 +144,28 @@ option = st.radio(
     horizontal=True
 )
 
-image = None
-file_name = ""
+# Use session state to reset page after submit
+if 'uploaded_image' not in st.session_state:
+    st.session_state.uploaded_image = None
+if 'file_name' not in st.session_state:
+    st.session_state.file_name = ""
 
+# ---------------- IMAGE UPLOAD / CAMERA ----------------
 if option == "Upload Image":
     uploaded_file = st.file_uploader("Upload image", type=["jpg", "png", "jpeg"])
     if uploaded_file:
-        image = Image.open(uploaded_file)
-        file_name = uploaded_file.name
+        st.session_state.uploaded_image = Image.open(uploaded_file)
+        st.session_state.file_name = uploaded_file.name
 
 if option == "Open Camera":
     cam = st.camera_input("Click to open camera")
     if cam:
-        image = Image.open(cam)
-        file_name = "camera_image"
+        st.session_state.uploaded_image = Image.open(cam)
+        st.session_state.file_name = "camera_image"
 
 # ---------------- PROCESS ----------------
-if image:
-    image = fix_orientation(image)
+if st.session_state.uploaded_image:
+    image = fix_orientation(st.session_state.uploaded_image)
     st.image(image, use_column_width=True)
 
     with st.spinner("🔍 Reading card (any angle supported)..."):
@@ -188,12 +185,15 @@ if image:
     if st.button("Submit"):
         try:
             sheet.append_row([
-                text, file_name, str(datetime.now()),
+                text, st.session_state.file_name, str(datetime.now()),
                 company, phone, email, name, designation, address, website
             ])
             st.success("✅ Saved successfully")
-            time.sleep(2)
-            st.rerun()  # <-- use this in latest Streamlit
+            # Reset session state for new upload
+            st.session_state.uploaded_image = None
+            st.session_state.file_name = ""
+            time.sleep(1)
+            st.rerun()  # auto refresh page for new upload
 
         except Exception as e:
             st.error(f"❌ Failed to save: {e}")
