@@ -1,5 +1,6 @@
 import streamlit as st
-import pytesseract
+import easyocr
+import numpy as np
 from PIL import Image
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
