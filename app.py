@@ -176,7 +176,8 @@ if option == "Open Camera":
         st.session_state.file_name = "camera_image"
 
 # ---------------- PROCESS ----------------
-if st.session_state.image:
+if st.session_state.image is not None:
+
     image = fix_orientation(st.session_state.image)
     st.image(image, use_column_width=True)
 
@@ -193,31 +194,29 @@ if st.session_state.image:
     designation = extract_designation(text)
     address = extract_address(text)
 
-   if st.button("✅ Submit"):
-    try:
-        sheet.append_row([
-            text,
-            st.session_state.file_name,
-            str(datetime.now()),
-            company,
-            phones,
-            emails,
-            name,
-            designation,
-            address,
-            websites
-        ])
+    if st.button("✅ Submit"):
+        try:
+            sheet.append_row([
+                text,
+                st.session_state.file_name,
+                str(datetime.now()),
+                company,
+                phones,
+                emails,
+                name,
+                designation,
+                address,
+                websites
+            ])
 
-        st.success("✅ Saved successfully")
+            st.success("✅ Saved successfully")
 
-        # 🔴 RESET EVERYTHING
-        st.session_state.image = None
-        st.session_state.file_name = ""
+            # 🔄 RESET STATE
+            st.session_state.image = None
+            st.session_state.file_name = ""
 
-        time.sleep(1)
+            time.sleep(1)
+            st.rerun()
 
-        # 🔴 HARD STOP + RELOAD
-        st.rerun()
-
-    except Exception as e:
-        st.error(f"❌ Failed to save: {e}")
+        except Exception as e:
+            st.error(f"❌ Failed to save: {e}")
