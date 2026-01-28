@@ -15,9 +15,9 @@ st.set_page_config(
 )
 
 # ---------------- HEADER ----------------
-col1, col2 = st.columns([2, 5])
+col1, col2 = st.columns([2, 6])
 with col1:
-    st.image("logo.png", width=180)
+    st.image("logo.png", width=200)
 
 with col2:
     st.markdown(
@@ -26,14 +26,14 @@ with col2:
         ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
         </h2>
         <p style="color:gray;margin-top:4px;">
-        Smart OCR • Any Angle Card Scanner
+        Smart Visiting Card OCR • Any Angle Scanner
         </p>
         """,
         unsafe_allow_html=True
     )
 
 st.divider()
-st.title("📸 Visiting Card OCR to Google Sheet")
+st.subheader("📸 Visiting Card → Google Sheet")
 
 # ---------------- OCR ----------------
 @st.cache_resource
@@ -63,10 +63,10 @@ def fix_orientation(image):
     return image
 
 def enhance_image(image):
-    img = image.convert("L")  # grayscale
-    enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(1.8)
-    max_size = 1024
+    img = image.convert("L")
+    img = ImageEnhance.Contrast(img).enhance(2.0)
+    img = ImageEnhance.Sharpness(img).enhance(1.5)
+    max_size = 1200
     if max(img.size) > max_size:
         ratio = max_size / max(img.size)
         img = img.resize((int(img.size[0]*ratio), int(img.size[1]*ratio)))
@@ -74,55 +74,68 @@ def enhance_image(image):
 
 def ocr_multi_angle(image):
     best_text = ""
-    max_len = 0
     for angle in [0, 90, 180, 270]:
         rotated = image.rotate(angle, expand=True)
         processed = enhance_image(rotated)
-        img_array = np.array(processed.convert("RGB"))
-        result = reader.readtext(img_array, detail=0, paragraph=True)
+        arr = np.array(processed.convert("RGB"))
+        result = reader.readtext(arr, detail=0, paragraph=True)
         text = "\n".join(result)
-        if len(text) > max_len:
-            max_len = len(text)
+        if len(text) > len(best_text):
             best_text = text
     return best_text
 
 # ---------------- PARSING FUNCTIONS ----------------
 def extract_company(text):
     for line in text.split("\n"):
-        if len(line.strip()) > 2 and line.isupper():
+        if line.isupper() and len(line) > 4 and not re.search(r'\d', line):
             return line.strip()
     return ""
 
-def extract_phone(text):
-    match = re.search(r'(\+?\d{10,14})', text)
-    return match.group(1) if match else ""
+def extract_phones(text):
+    phones = re.findall(r'\+?\d[\d\s\-]{8,14}\d', text)
+    clean = list(set(p.replace(" ", "").replace("-", "") for p in phones))
+    return ", ".join(clean)
 
-def extract_email(text):
-    match = re.search(r'[\w\.-]+@[\w\.-]+', text)
-    return match.group(0) if match else ""
+def extract_emails(text):
+    emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', text)
+    return ", ".join(list(set(emails)))
 
-def extract_website(text):
-    match = re.search(r'(https?://\S+|www\.\S+)', text, re.IGNORECASE)
-    return match.group(0) if match else ""
+def extract_websites(text):
+    sites = re.findall(r'(https?://\S+|www\.\S+)', text, re.IGNORECASE)
+    clean = []
+    for s in sites:
+        s = s.strip(" ,)")
+        if not s.startswith("http"):
+            s = "https://" + s
+        clean.append(s)
+    return ", ".join(list(set(clean)))
 
 def extract_name(text, company):
     for line in text.split("\n"):
-        if line != company and not re.search(r'[\d@]', line):
+        if (
+            line != company
+            and len(line.split()) <= 4
+            and not re.search(r'\d|@|www|http', line, re.IGNORECASE)
+        ):
             return line.strip()
     return ""
 
 def extract_designation(text):
+    keywords = [
+        "manager", "director", "engineer", "officer",
+        "founder", "ceo", "cto", "sales", "marketing"
+    ]
     for line in text.split("\n"):
-        if any(k in line.lower() for k in ["manager", "director", "engineer", "officer", "founder", "ceo"]):
+        if any(k in line.lower() for k in keywords):
             return line.strip()
     return ""
 
 def extract_address(text):
-    addr = []
+    lines = []
     for line in text.split("\n"):
-        if any(c.isdigit() for c in line) or any(word in line.lower() for word in ["street", "road", "lane", "pvt", "ltd", "city", "zip", "state"]):
-            addr.append(line.strip())
-    return ", ".join(addr)
+        if any(word in line.lower() for word in ["road", "street", "lane", "sector", "block", "city", "state", "india", "pvt", "ltd"]):
+            lines.append(line.strip())
+    return ", ".join(lines)
 
 # ---------------- GOOGLE SHEET ----------------
 scope = [
@@ -137,6 +150,12 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
 client = gspread.authorize(creds)
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
+# ---------------- SESSION STATE ----------------
+if "image" not in st.session_state:
+    st.session_state.image = None
+if "file_name" not in st.session_state:
+    st.session_state.file_name = ""
+
 # ---------------- IMAGE SOURCE ----------------
 option = st.radio(
     "Choose Image Source",
@@ -144,56 +163,56 @@ option = st.radio(
     horizontal=True
 )
 
-# Use session state to reset page after submit
-if 'uploaded_image' not in st.session_state:
-    st.session_state.uploaded_image = None
-if 'file_name' not in st.session_state:
-    st.session_state.file_name = ""
-
-# ---------------- IMAGE UPLOAD / CAMERA ----------------
 if option == "Upload Image":
-    uploaded_file = st.file_uploader("Upload image", type=["jpg", "png", "jpeg"])
-    if uploaded_file:
-        st.session_state.uploaded_image = Image.open(uploaded_file)
-        st.session_state.file_name = uploaded_file.name
+    uploaded = st.file_uploader("Upload visiting card image", type=["jpg", "png", "jpeg"])
+    if uploaded:
+        st.session_state.image = Image.open(uploaded)
+        st.session_state.file_name = uploaded.name
 
 if option == "Open Camera":
-    cam = st.camera_input("Click to open camera")
+    cam = st.camera_input("Click & capture card")
     if cam:
-        st.session_state.uploaded_image = Image.open(cam)
+        st.session_state.image = Image.open(cam)
         st.session_state.file_name = "camera_image"
 
 # ---------------- PROCESS ----------------
-if st.session_state.uploaded_image:
-    image = fix_orientation(st.session_state.uploaded_image)
+if st.session_state.image:
+    image = fix_orientation(st.session_state.image)
     st.image(image, use_column_width=True)
 
-    with st.spinner("🔍 Reading card (any angle supported)..."):
+    with st.spinner("🔍 Scanning visiting card..."):
         text = ocr_multi_angle(image)
 
-    st.subheader("Extracted Text")
-    st.text_area("OCR Output", text, height=260)
+    st.text_area("OCR Raw Output", text, height=260)
 
     company = extract_company(text)
-    phone = extract_phone(text)
-    email = extract_email(text)
-    website = extract_website(text)
+    phones = extract_phones(text)
+    emails = extract_emails(text)
+    websites = extract_websites(text)
     name = extract_name(text, company)
     designation = extract_designation(text)
     address = extract_address(text)
 
-    if st.button("Submit"):
+    if st.button("✅ Save to Google Sheet"):
         try:
             sheet.append_row([
-                text, st.session_state.file_name, str(datetime.now()),
-                company, phone, email, name, designation, address, website
+                text,
+                st.session_state.file_name,
+                str(datetime.now()),
+                company,
+                phones,
+                emails,
+                name,
+                designation,
+                address,
+                websites
             ])
-            st.success("✅ Saved successfully")
-            # Reset session state for new upload
-            st.session_state.uploaded_image = None
+
+            st.success("🎉 Saved successfully!")
+            st.session_state.image = None
             st.session_state.file_name = ""
             time.sleep(1)
-            st.rerun()  # auto refresh page for new upload
+            st.rerun()
 
         except Exception as e:
             st.error(f"❌ Failed to save: {e}")
