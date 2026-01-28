@@ -7,9 +7,19 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import io
 
+# ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Image to Google Sheet", layout="centered")
 st.title("📸 Image to Google Sheet App")
 
+# ---------------- OCR READER (YE YAHI LIKHNA H) ----------------
+reader = easyocr.Reader(['en'], gpu=False)
+
+def extract_text(image):
+    img_array = np.array(image)
+    result = reader.readtext(img_array, detail=0)
+    return " ".join(result)
+
+# ---------------- GOOGLE SHEET AUTH ----------------
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive",
@@ -22,6 +32,7 @@ client = gspread.authorize(creds)
 
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
+# ---------------- FILE UPLOAD ----------------
 uploaded_file = st.file_uploader(
     "Upload image (jpg / png / jpeg)",
     type=["jpg", "png", "jpeg"]
@@ -31,7 +42,8 @@ if uploaded_file:
     image = Image.open(io.BytesIO(uploaded_file.read()))
     st.image(image, use_column_width=True)
 
-    text = pytesseract.image_to_string(image)
+    # ✅ EASYOCR USE HO RAHA H
+    text = extract_text(image)
 
     st.subheader("Extracted Text")
     st.text_area("OCR Output", text, height=200)
