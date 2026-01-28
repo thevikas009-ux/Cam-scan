@@ -14,15 +14,19 @@ st.set_page_config(
     layout="centered"
 )
 
-# ---------------- SESSION STATE INIT ----------------
+# ---------------- SESSION STATE ----------------
 if "image" not in st.session_state:
     st.session_state.image = None
 
 if "file_name" not in st.session_state:
     st.session_state.file_name = ""
 
+if "reset_key" not in st.session_state:
+    st.session_state.reset_key = 0
+
 # ---------------- HEADER ----------------
 col1, col2 = st.columns([2, 6])
+
 with col1:
     st.image("logo.png", width=200)
 
@@ -157,13 +161,20 @@ option = st.radio(
 )
 
 if option == "Upload Image":
-    uploaded = st.file_uploader("Upload visiting card image", type=["jpg", "png", "jpeg"])
+    uploaded = st.file_uploader(
+        "Upload visiting card image",
+        type=["jpg", "png", "jpeg"],
+        key=f"uploader_{st.session_state.reset_key}"
+    )
     if uploaded:
         st.session_state.image = Image.open(uploaded)
         st.session_state.file_name = uploaded.name
 
 if option == "Open Camera":
-    cam = st.camera_input("Capture visiting card")
+    cam = st.camera_input(
+        "Capture visiting card",
+        key=f"camera_{st.session_state.reset_key}"
+    )
     if cam:
         st.session_state.image = Image.open(cam)
         st.session_state.file_name = "camera_image"
@@ -204,8 +215,11 @@ if st.session_state.image is not None:
 
             st.success("✅ Saved successfully")
 
-            # 🔥 FORCE RESET
-            st.session_state.clear()
+            # 🔥 FULL RESET (THIS IS THE KEY)
+            st.session_state.image = None
+            st.session_state.file_name = ""
+            st.session_state.reset_key += 1
+
             time.sleep(1)
             st.rerun()
 
