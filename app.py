@@ -11,7 +11,7 @@ import io
 st.set_page_config(page_title="Image to Google Sheet", layout="centered")
 st.title("📸 Image to Google Sheet App")
 
-# ---------------- OCR READER (YE YAHI LIKHNA H) ----------------
+# ---------------- OCR READER ----------------
 reader = easyocr.Reader(['en'], gpu=False)
 
 def extract_text(image):
@@ -25,11 +25,13 @@ scope = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-creds = ServiceAccountCredentials.from_json_keyfile_dict(
-    st.secrets["gcp_service_account"], scope
-)
+# Make sure your secrets.toml has gcp_service_account as a dictionary
+# and sheet_id as just the Sheet ID (not full URL)
+creds_dict = st.secrets["gcp_service_account"]
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
+# Open your Google Sheet
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
 # ---------------- FILE UPLOAD ----------------
@@ -42,16 +44,23 @@ if uploaded_file:
     image = Image.open(io.BytesIO(uploaded_file.read()))
     st.image(image, use_column_width=True)
 
-    # ✅ EASYOCR USE HO RAHA H
+    # ✅ OCR
     text = extract_text(image)
 
     st.subheader("Extracted Text")
     st.text_area("OCR Output", text, height=200)
 
     if st.button("Save to Google Sheet"):
-        sheet.append_row([
-            text,
-            uploaded_file.name,
-            str(datetime.now())
-        ])
-        st.success("✅ Data saved to Google Sheet")
+        try:
+            sheet.append_row([
+                text,
+                uploaded_file.name,
+                str(datetime.now())
+            ])
+            st.success("✅ Data saved to Google Sheet")
+        except Exception as e:
+            st.error(f"Error saving to Sheet: {e}")
+
+# ---------------- DEBUG: Check Secrets ----------------
+# Uncomment this temporarily to make sure Streamlit sees your secrets
+# st.write(st.secrets)
