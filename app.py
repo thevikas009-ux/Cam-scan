@@ -5,8 +5,8 @@ from PIL import Image, ImageEnhance, ExifTags
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
-import time
 import re
+import time
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(
@@ -14,21 +14,10 @@ st.set_page_config(
     layout="centered"
 )
 
-# ---------------- SESSION STATE ----------------
-if "image" not in st.session_state:
-    st.session_state.image = None
-
-if "file_name" not in st.session_state:
-    st.session_state.file_name = ""
-
-if "reset_key" not in st.session_state:
-    st.session_state.reset_key = 0
-
 # ---------------- HEADER ----------------
 col1, col2 = st.columns([2, 6])
-
 with col1:
-    st.image("logo.png", width=200)
+    st.image("logo.png", width=220)
 
 with col2:
     st.markdown(
@@ -37,108 +26,137 @@ with col2:
         ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
         </h2>
         <p style="color:gray;margin-top:4px;">
-        Smart Visiting Card OCR
+        Smart Visiting Card OCR • Mobile Friendly
         </p>
         """,
         unsafe_allow_html=True
     )
 
 st.divider()
-st.subheader("📸 Visiting Card → Google Sheet")
+st.title("📸 Visiting Card → Google Sheet")
 
-# ---------------- OCR ----------------
+# ---------------- OCR LOAD ----------------
 @st.cache_resource
-def load_ocr():
+def load_reader():
     return easyocr.Reader(['en'], gpu=False)
 
-reader = load_ocr()
+reader = load_reader()
 
 # ---------------- IMAGE HELPERS ----------------
-def fix_orientation(image):
+def fix_orientation(img):
     try:
-        exif = image._getexif()
+        exif = img._getexif()
         if exif:
-            for tag, value in ExifTags.TAGS.items():
-                if value == "Orientation":
-                    orientation_key = tag
-                    break
-            orientation = exif.get(orientation_key)
-            if orientation == 3:
-                image = image.rotate(180, expand=True)
-            elif orientation == 6:
-                image = image.rotate(270, expand=True)
-            elif orientation == 8:
-                image = image.rotate(90, expand=True)
-    except Exception:
+            for k, v in ExifTags.TAGS.items():
+                if v == "Orientation":
+                    o = exif.get(k)
+                    if o == 3:
+                        img = img.rotate(180, expand=True)
+                    elif o == 6:
+                        img = img.rotate(270, expand=True)
+                    elif o == 8:
+                        img = img.rotate(90, expand=True)
+    except:
         pass
-    return image
-
-def enhance_image(image):
-    img = image.convert("L")
-    img = ImageEnhance.Contrast(img).enhance(2.0)
-    img = ImageEnhance.Sharpness(img).enhance(1.5)
     return img
 
-def ocr_multi_angle(image):
-    best_text = ""
-    for angle in [0, 90, 180, 270]:
-        rotated = image.rotate(angle, expand=True)
-        processed = enhance_image(rotated)
-        arr = np.array(processed.convert("RGB"))
-        result = reader.readtext(arr, detail=0, paragraph=True)
-        text = "\n".join(result)
-        if len(text) > len(best_text):
-            best_text = text
-    return best_text
+def enhance(img):
+    img = img.convert("L")
+    img = ImageEnhance.Contrast(img).enhance(2.5)
+    img = ImageEnhance.Sharpness(img).enhance(2.0)
 
-# ---------------- PARSING ----------------
-def extract_company(text):
-    for line in text.split("\n"):
-        if line.isupper() and len(line) > 4 and not re.search(r"\d", line):
-            return line.strip()
+    w, h = img.size
+    if max(w, h) < 1200:
+        scale = 1200 / max(w, h)
+        img = img.resize((int(w*scale), int(h*scale)))
+
+    return img
+
+# ---------------- OCR + CLEANING ----------------
+def clean_ocr_text(text):
+    lines = text.split("\n")
+    out = []
+
+    for l in lines:
+        l = l.strip()
+        if len(l) < 3:
+            continue
+
+        l = re.sub(r'[^A-Za-z0-9@./:+\- ()]', ' ', l)
+        l = re.sub(r'\s+', ' ', l)
+
+        alpha_ratio = sum(c.isalpha() for c in l) / max(len(l), 1)
+        if alpha_ratio < 0.3:
+            continue
+
+        out.append(l)
+
+    return "\n".join(out)
+
+def ocr_any_angle(img):
+    best = ""
+    for a in [0, 90, 180, 270]:
+        r = img.rotate(a, expand=True)
+        r = enhance(r)
+        arr = np.array(r.convert("RGB"))
+
+        txt = reader.readtext(
+            arr,
+            detail=0,
+            paragraph=True,
+            text_threshold=0.7,
+            low_text=0.4
+        )
+
+        txt = clean_ocr_text("\n".join(txt))
+        if len(txt) > len(best):
+            best = txt
+
+    return best
+
+# ---------------- DATA EXTRACTORS ----------------
+def get_company(t):
+    for l in t.split("\n"):
+        if l.isupper() and len(l) > 4:
+            return l
     return ""
 
-def extract_phones(text):
-    phones = re.findall(r'\+?\d[\d\s\-]{8,14}\d', text)
-    return ", ".join(sorted(set(p.replace(" ", "").replace("-", "") for p in phones)))
+def get_phone(t):
+    m = re.search(r'(\+?\d{10,14})', t)
+    return m.group(1) if m else ""
 
-def extract_emails(text):
-    emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', text)
-    return ", ".join(sorted(set(emails)))
+def get_email(t):
+    m = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', t)
+    return m.group(0) if m else ""
 
-def extract_websites(text):
-    sites = re.findall(r'(https?://\S+|www\.\S+)', text, re.IGNORECASE)
-    clean = []
-    for s in sites:
-        s = s.strip(" ,)")
-        if not s.startswith("http"):
-            s = "https://" + s
-        clean.append(s)
-    return ", ".join(sorted(set(clean)))
-
-def extract_name(text, company):
-    for line in text.split("\n"):
-        if (
-            line != company
-            and len(line.split()) <= 4
-            and not re.search(r"\d|@|www|http", line, re.IGNORECASE)
-        ):
-            return line.strip()
+def get_website(t):
+    t = t.replace("WWW.", "www.").replace("Www.", "www.")
+    m = re.search(r'(https?://\S+|www\.\S+)', t, re.I)
+    if m:
+        u = m.group(0)
+        if not u.startswith("http"):
+            u = "https://" + u
+        return u
     return ""
 
-def extract_designation(text):
-    keywords = ["manager", "director", "engineer", "officer", "ceo", "founder"]
-    for line in text.split("\n"):
-        if any(k in line.lower() for k in keywords):
-            return line.strip()
+def get_name(t, company):
+    for l in t.split("\n"):
+        if l != company and not re.search(r'\d|@', l):
+            return l
     return ""
 
-def extract_address(text):
-    lines = []
-    for line in text.split("\n"):
-        if any(w in line.lower() for w in ["road", "street", "lane", "sector", "city", "state", "india"]):
-            lines.append(line.strip())
-    return ", ".join(lines)
+def get_designation(t):
+    for l in t.split("\n"):
+        if any(k in l.lower() for k in ["manager","director","engineer","officer","founder","ceo","sales"]):
+            return l
+    return ""
+
+def get_address(t):
+    addr = []
+    for l in t.split("\n"):
+        if any(w in l.lower() for w in ["road","street","lane","pvt","ltd","city","state","pin"]):
+            addr.append(l)
+    return ", ".join(addr)
 
 # ---------------- GOOGLE SHEET ----------------
 scope = [
@@ -153,75 +171,65 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
 client = gspread.authorize(creds)
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
-# ---------------- IMAGE SOURCE ----------------
-option = st.radio(
-    "Choose Image Source",
-    ["Upload Image", "Open Camera"],
-    horizontal=True
-)
+# ---------------- SESSION RESET ----------------
+if "reset" not in st.session_state:
+    st.session_state.reset = False
 
-if option == "Upload Image":
-    uploaded = st.file_uploader(
-        "Upload visiting card image",
-        type=["jpg", "png", "jpeg"],
-        key=f"uploader_{st.session_state.reset_key}"
-    )
-    if uploaded:
-        st.session_state.image = Image.open(uploaded)
-        st.session_state.file_name = uploaded.name
+# ---------------- IMAGE INPUT ----------------
+choice = st.radio("Choose Image Source", ["Upload Image", "Open Camera"], horizontal=True)
 
-if option == "Open Camera":
-    cam = st.camera_input(
-        "Capture visiting card",
-        key=f"camera_{st.session_state.reset_key}"
-    )
+image = None
+filename = ""
+
+if choice == "Upload Image":
+    f = st.file_uploader("Upload visiting card", type=["jpg","jpeg","png"])
+    if f:
+        image = Image.open(f)
+        filename = f.name
+
+if choice == "Open Camera":
+    cam = st.camera_input("Tap to open camera")
     if cam:
-        st.session_state.image = Image.open(cam)
-        st.session_state.file_name = "camera_image"
+        image = Image.open(cam)
+        filename = "camera_image"
 
 # ---------------- PROCESS ----------------
-if st.session_state.image is not None:
-
-    image = fix_orientation(st.session_state.image)
+if image:
+    image = fix_orientation(image)
     st.image(image, use_column_width=True)
 
     with st.spinner("🔍 Scanning card..."):
-        text = ocr_multi_angle(image)
+        text = ocr_any_angle(image)
 
     st.text_area("OCR Output", text, height=260)
 
-    company = extract_company(text)
-    phones = extract_phones(text)
-    emails = extract_emails(text)
-    websites = extract_websites(text)
-    name = extract_name(text, company)
-    designation = extract_designation(text)
-    address = extract_address(text)
+    company = get_company(text)
+    phone = get_phone(text)
+    email = get_email(text)
+    website = get_website(text)
+    name = get_name(text, company)
+    designation = get_designation(text)
+    address = get_address(text)
 
     if st.button("✅ Submit"):
-        try:
-            sheet.append_row([
-                text,
-                st.session_state.file_name,
-                str(datetime.now()),
-                company,
-                phones,
-                emails,
-                name,
-                designation,
-                address,
-                websites
-            ])
+        sheet.append_row([
+            text,
+            filename,
+            str(datetime.now()),
+            company,
+            phone,
+            email,
+            name,
+            designation,
+            address,
+            website
+        ])
 
-            st.success("✅ Saved successfully")
+        st.success("✅ Saved successfully")
+        time.sleep(1)
+        st.session_state.reset = True
+        st.rerun()
 
-            # 🔥 FULL RESET (THIS IS THE KEY)
-            st.session_state.image = None
-            st.session_state.file_name = ""
-            st.session_state.reset_key += 1
-
-            time.sleep(1)
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"❌ Failed to save: {e}")
+# ---------------- RESET PAGE ----------------
+if st.session_state.reset:
+    st.session_state.reset = False
