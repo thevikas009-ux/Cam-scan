@@ -3,5 +3,6 @@ easyocr
 numpy
 pillow
 gspread
-google-auth
-
+oauth2client
+torch
+torchvision
