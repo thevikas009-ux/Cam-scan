@@ -14,7 +14,7 @@ LOGO_URL = "https://drive.google.com/uc?export=view&id=1iYnejBecxl8o1sYj_BTS5ax_
 
 st.image(LOGO_URL, width=160)
 st.markdown(
-    "<h4 style='text-align:center;'>Your Company Name</h4>",
+    "<h4 style='text-align:center;'>ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h4>",
     unsafe_allow_html=True
 )
 st.divider()
