@@ -84,6 +84,7 @@ if image_file:
         try:
             company, name, phone, email, designation, address = extract_fields(text)
             
+            # Append data directly, no header required
             sheet.append_row([
                 company,
                 name,
@@ -97,6 +98,3 @@ if image_file:
             st.success("✅ Data saved to Google Sheet")
         except Exception as e:
             st.error(f"Error saving to Sheet: {e}")
-
-# ---------------- DEBUG: Check Secrets ----------------
-# st.write(st.secrets)  # Uncomment to verify secrets
