@@ -14,6 +14,13 @@ st.set_page_config(
     layout="centered"
 )
 
+# ---------------- SESSION STATE INIT ----------------
+if "image" not in st.session_state:
+    st.session_state.image = None
+
+if "file_name" not in st.session_state:
+    st.session_state.file_name = ""
+
 # ---------------- HEADER ----------------
 col1, col2 = st.columns([2, 6])
 with col1:
@@ -26,7 +33,7 @@ with col2:
         ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
         </h2>
         <p style="color:gray;margin-top:4px;">
-        Smart Visiting Card OCR • Any Angle Scanner
+        Smart Visiting Card OCR
         </p>
         """,
         unsafe_allow_html=True
@@ -66,10 +73,6 @@ def enhance_image(image):
     img = image.convert("L")
     img = ImageEnhance.Contrast(img).enhance(2.0)
     img = ImageEnhance.Sharpness(img).enhance(1.5)
-    max_size = 1200
-    if max(img.size) > max_size:
-        ratio = max_size / max(img.size)
-        img = img.resize((int(img.size[0]*ratio), int(img.size[1]*ratio)))
     return img
 
 def ocr_multi_angle(image):
@@ -84,21 +87,20 @@ def ocr_multi_angle(image):
             best_text = text
     return best_text
 
-# ---------------- PARSING FUNCTIONS ----------------
+# ---------------- PARSING ----------------
 def extract_company(text):
     for line in text.split("\n"):
-        if line.isupper() and len(line) > 4 and not re.search(r'\d', line):
+        if line.isupper() and len(line) > 4 and not re.search(r"\d", line):
             return line.strip()
     return ""
 
 def extract_phones(text):
     phones = re.findall(r'\+?\d[\d\s\-]{8,14}\d', text)
-    clean = list(set(p.replace(" ", "").replace("-", "") for p in phones))
-    return ", ".join(clean)
+    return ", ".join(sorted(set(p.replace(" ", "").replace("-", "") for p in phones)))
 
 def extract_emails(text):
     emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', text)
-    return ", ".join(list(set(emails)))
+    return ", ".join(sorted(set(emails)))
 
 def extract_websites(text):
     sites = re.findall(r'(https?://\S+|www\.\S+)', text, re.IGNORECASE)
@@ -108,23 +110,20 @@ def extract_websites(text):
         if not s.startswith("http"):
             s = "https://" + s
         clean.append(s)
-    return ", ".join(list(set(clean)))
+    return ", ".join(sorted(set(clean)))
 
 def extract_name(text, company):
     for line in text.split("\n"):
         if (
             line != company
             and len(line.split()) <= 4
-            and not re.search(r'\d|@|www|http', line, re.IGNORECASE)
+            and not re.search(r"\d|@|www|http", line, re.IGNORECASE)
         ):
             return line.strip()
     return ""
 
 def extract_designation(text):
-    keywords = [
-        "manager", "director", "engineer", "officer",
-        "founder", "ceo", "cto", "sales", "marketing"
-    ]
+    keywords = ["manager", "director", "engineer", "officer", "ceo", "founder"]
     for line in text.split("\n"):
         if any(k in line.lower() for k in keywords):
             return line.strip()
@@ -133,7 +132,7 @@ def extract_designation(text):
 def extract_address(text):
     lines = []
     for line in text.split("\n"):
-        if any(word in line.lower() for word in ["road", "street", "lane", "sector", "block", "city", "state", "india", "pvt", "ltd"]):
+        if any(w in line.lower() for w in ["road", "street", "lane", "sector", "city", "state", "india"]):
             lines.append(line.strip())
     return ", ".join(lines)
 
@@ -150,12 +149,6 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
 client = gspread.authorize(creds)
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
-# ---------------- SESSION STATE ----------------
-if "image" not in st.session_state:
-    st.session_state.image = None
-if "file_name" not in st.session_state:
-    st.session_state.file_name = ""
-
 # ---------------- IMAGE SOURCE ----------------
 option = st.radio(
     "Choose Image Source",
@@ -170,7 +163,7 @@ if option == "Upload Image":
         st.session_state.file_name = uploaded.name
 
 if option == "Open Camera":
-    cam = st.camera_input("Click & capture card")
+    cam = st.camera_input("Capture visiting card")
     if cam:
         st.session_state.image = Image.open(cam)
         st.session_state.file_name = "camera_image"
@@ -181,10 +174,10 @@ if st.session_state.image is not None:
     image = fix_orientation(st.session_state.image)
     st.image(image, use_column_width=True)
 
-    with st.spinner("🔍 Scanning visiting card..."):
+    with st.spinner("🔍 Scanning card..."):
         text = ocr_multi_angle(image)
 
-    st.text_area("OCR Raw Output", text, height=260)
+    st.text_area("OCR Output", text, height=260)
 
     company = extract_company(text)
     phones = extract_phones(text)
@@ -211,10 +204,8 @@ if st.session_state.image is not None:
 
             st.success("✅ Saved successfully")
 
-            # 🔄 RESET STATE
-            st.session_state.image = None
-            st.session_state.file_name = ""
-
+            # 🔥 FORCE RESET
+            st.session_state.clear()
             time.sleep(1)
             st.rerun()
 
