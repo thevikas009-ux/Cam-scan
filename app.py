@@ -12,7 +12,11 @@ st.set_page_config(page_title="Image to Google Sheet", layout="centered")
 st.title("📸 Image to Google Sheet App")
 
 # ---------------- OCR ----------------
-reader = easyocr.Reader(['en'], gpu=False)
+@st.cache_resource
+def load_ocr():
+    return easyocr.Reader(['en'], gpu=False)
+
+reader = load_ocr()
 
 def extract_text(image):
     img_array = np.array(image)
@@ -58,10 +62,16 @@ if option == "Open Camera":
         file_name = "camera_image"
 
 # ---------------- PROCESS IMAGE ----------------
+MAX_SIZE_MB = 4
+if uploaded_file and uploaded_file.size > MAX_SIZE_MB * 1024 * 1024:
+    st.error("❌ Image too large. Please upload image under 4MB")
+    st.stop()
 if image:
     st.image(image, use_column_width=True)
 
+    with st.spinner("🔍 Scanning image, please wait..."):
     text = extract_text(image)
+
 
     st.subheader("Extracted Text (Full Raw Data)")
     st.text_area("OCR Output", text, height=250)
