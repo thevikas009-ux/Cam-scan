@@ -1,7 +1,7 @@
 import streamlit as st
 import easyocr
 import numpy as np
-from PIL import Image, ExifTags
+from PIL import Image, ImageEnhance, ExifTags
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
@@ -62,13 +62,28 @@ def fix_orientation(image):
         pass
     return image
 
+def enhance_image(image):
+    # Convert to grayscale
+    img = image.convert("L")
+    # Increase contrast
+    enhancer = ImageEnhance.Contrast(img)
+    img = enhancer.enhance(1.8)
+    # Resize if too small
+    max_size = 1024
+    if max(img.size) > max_size:
+        ratio = max_size / max(img.size)
+        new_size = (int(img.size[0]*ratio), int(img.size[1]*ratio))
+        img = img.resize(new_size)
+    return img
+
 def ocr_multi_angle(image):
     best_text = ""
     max_len = 0
 
     for angle in [0, 90, 180, 270]:
         rotated = image.rotate(angle, expand=True)
-        img_array = np.array(rotated.convert("RGB"))
+        processed = enhance_image(rotated)
+        img_array = np.array(processed.convert("RGB"))
         result = reader.readtext(img_array, detail=0, paragraph=True)
         text = "\n".join(result)
 
@@ -112,7 +127,7 @@ def extract_designation(text):
 def extract_address(text):
     addr = []
     for line in text.split("\n"):
-        if any(c.isdigit() for c in line):
+        if any(c.isdigit() for c in line) or any(word in line.lower() for word in ["street", "road", "lane", "pvt", "ltd", "city", "zip", "state"]):
             addr.append(line.strip())
     return ", ".join(addr)
 
@@ -140,10 +155,7 @@ image = None
 file_name = ""
 
 if option == "Upload Image":
-    uploaded_file = st.file_uploader(
-        "Upload image",
-        type=["jpg", "png", "jpeg"]
-    )
+    uploaded_file = st.file_uploader("Upload image", type=["jpg", "png", "jpeg"])
     if uploaded_file:
         image = Image.open(uploaded_file)
         file_name = uploaded_file.name
@@ -176,19 +188,12 @@ if image:
     if st.button("Save to Google Sheet"):
         try:
             sheet.append_row([
-                text,
-                file_name,
-                str(datetime.now()),
-                company,
-                phone,
-                email,
-                name,
-                designation,
-                address,
-                website
+                text, file_name, str(datetime.now()),
+                company, phone, email, name, designation, address, website
             ])
             st.success("✅ Saved successfully")
             time.sleep(2)
-            st.rerun()
-        except Exception:
-            st.error("❌ Failed to save data")
+            st.experimental_rerun()  # auto refresh page for new upload
+
+        except Exception as e:
+            st.error(f"❌ Failed to save: {e}")
