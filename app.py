@@ -21,12 +21,22 @@ SCOPES = [
 ]
 
 # ---------------- AUTH ----------------
-creds = service_account.Credentials.from_service_account_file(
-    "service_account.json", scopes=SCOPES
+from google.oauth2 import service_account
+import gspread
+from googleapiclient.discovery import build
+
+SCOPES = [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets"
+]
+
+creds = service_account.Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"],
+    scopes=SCOPES
 )
 
-drive_service = build("drive", "v3", credentials=creds)
 gc = gspread.authorize(creds)
+drive_service = build("drive", "v3", credentials=creds)
 
 # ---------------- OCR ----------------
 @st.cache_resource
