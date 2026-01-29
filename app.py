@@ -62,29 +62,56 @@ def run_ocr(image):
     result = reader.readtext(img, detail=0, paragraph=True)
     return clean_text("\n".join(result))
 
-# ================= DATA EXTRACTION =================
+# ================= SMART EXTRACTION =================
+DESIGNATION_WORDS = [
+    "manager", "engineer", "director", "sales", "marketing",
+    "executive", "officer", "ceo", "cto", "founder", "owner"
+]
+
 def extract_data(text):
+    lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 2]
+
     phone = ", ".join(set(re.findall(r"\+?\d[\d\s\-]{8,15}", text)))
     email = ", ".join(set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)))
     website = ", ".join(set(re.findall(r"(?:www\.|https?://)[^\s]+", text)))
 
-    lines = text.split("\n")
-
-    name = lines[0] if lines else ""
     company = ""
+    name = ""
     designation = ""
-    address = ""
+    address_lines = []
 
     for line in lines:
-        if "pvt" in line.lower() or "ltd" in line.lower() or "company" in line.lower():
+        low = line.lower()
+
+        # Company
+        if not company and any(x in low for x in ["pvt", "ltd", "llp", "industries", "company"]):
             company = line
-        if any(x in line.lower() for x in ["manager", "engineer", "director", "sales", "marketing"]):
+            continue
+
+        # Designation
+        if not designation and any(word in low for word in DESIGNATION_WORDS):
             designation = line
-        if any(x in line.lower() for x in ["road", "street", "sector", "block", "india"]):
-            address += line + " "
+            continue
 
-    return company, phone, email, name, designation, address.strip(), website
+        # Name (clean – no number, no email, no website)
+        if not name:
+            if (
+                not re.search(r"\d", line)
+                and "@" not in line
+                and "www" not in low
+                and "http" not in low
+                and len(line.split()) <= 4
+            ):
+                name = line
+                continue
 
+        # Address
+        if any(x in low for x in ["road", "street", "sector", "block", "india", "pin"]):
+            address_lines.append(line)
+
+    address = ", ".join(address_lines)
+
+    return company, phone, email, name, designation, address, website
 # ================= GOOGLE SHEET AUTH =================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets"
