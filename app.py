@@ -80,7 +80,8 @@ def extract_data(text):
 
         # ---------- COMPANY ----------
         if not company:
-            if re.search(r"\b(pvt|private|ltd|limited|llp|industries|industry|company|corp|corporation)\b", low):
+            if re.search(r"\b(pvt|private|ltd|limited|llp|industries|industry|company|corp|corporation|pvt ltd|private limited|ltd|limited|llp|inc|co|corporation|company|impex|foods|tech|organization|enterprises|industries|ventures|solutions|systems|group|associates|consultancy|services
+)\b", low):
                 company = line
                 continue
 
@@ -91,7 +92,7 @@ def extract_data(text):
         # ---------- DESIGNATION ----------
         if not designation:
             if re.search(
-                r"\b(manager|engineer|director|sales|marketing|executive|officer|ceo|cto|cfo|founder|owner|lead|head|consultant|supervisor|admin|partner)\b",
+                r"\b(manager|engineer|director|executive director|owner|partner|founder|ceo|proprietor|head|president|vice president|vp|chairman|cfo|coo|cto|chief executive officer|chief financial officer|chief operating officer|chief technology officer|general manager|assistant manager|team lead|supervisor|engineer|developer|consultant|designer|administrator|co-founder|sales|marketing|executive|officer|ceo|cto|cfo|founder|owner|lead|head|consultant|supervisor|admin|partner)\b",
                 low
             ):
                 designation = line
@@ -118,7 +119,8 @@ def extract_data(text):
                 continue
 
         # ---------- ADDRESS ----------
-        if any(x in low for x in ["road", "street", "sector", "block", "india", "pin"]):
+        if any(x in low for x in ["road", "street", "sector", "block", "india", "pin","plot","no","wing","floor","sector","phase","building","block","road","street","lane","market","near","opp","opposite","beside","junction","area","complex","society","colony","village","town","city","state","india","pincode","pin","nr","station","gali","bazaar","chowk","park","house","office","suite","apartment","apt","flat"
+]):
             address_lines.append(line)
 
     address = ", ".join(address_lines)
