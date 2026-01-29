@@ -79,19 +79,18 @@ def extract_data(text):
         low = line.lower()
 
         # ---------- COMPANY ----------
-    if not company:
-    if re.search(
-        r"\b("
-        r"pvt|private|ltd|limited|llp|inc|co|corp|corporation|"
-        r"impex|foods|tech|organization|enterprises|industries|"
-        r"ventures|solutions|systems|group|associates|"
-        r"consultancy|services"
-        r")\b",
-        low,
-        re.IGNORECASE
-    ):
-        company = line
-        continue
+        if not company:
+            if re.search(
+                r"\b(pvt|private|ltd|limited|llp|industries|industry|company|corp|corporation)\b",
+                low
+            ):
+                company = line
+                continue
+
+            if line.isupper() and len(line.split()) >= 2:
+                company = line
+                continue
+
 
     # ALL CAPS company fallback
     if line.isupper() and len(line.split()) >= 2:
