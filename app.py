@@ -85,19 +85,37 @@ def extract_data(text):
     for line in lines:
         low = line.lower()
 
-        # Company
-        if not company and any(x in low for x in ["pvt", "ltd", "llp", "industries", "company"]):
-            company = line
-            continue
+        # COMPANY NAME (SMART + CAPS SAFE) 
+       if not company:
+    # Case 1: Contains company keywords
+    if re.search(r"\b(pvt|private|ltd|limited|llp|industries|industry|company|corp|corporation)\b", low):
+        company = line
+        continue
+
+    # Case 2: ALL CAPS line (probable company)
+    if line.isupper() and len(line.split()) >= 2:
+        company = line
+        continue
 
         # Designation (CASE-INSENSITIVE, CAPS SAFE)
         if not designation:
-            for word in DESIGNATION_WORDS:
-                if re.search(rf"\b{word}\b", line, re.IGNORECASE):
-                    designation = line.strip()
-                    break
-            if designation:
-                continue
+
+    # Case 1: keyword based (case-insensitive)
+    if re.search(
+        r"\b(manager|engineer|director|sales|marketing|executive|officer|ceo|cto|cfo|founder|owner|lead|head|consultant|supervisor|admin|partner)\b",
+        low
+    ):
+        designation = line
+        continue
+
+    # Case 2: ALL CAPS role (but NOT company)
+    if (
+        line.isupper()
+        and 1 <= len(line.split()) <= 5
+        and not re.search(r"\b(pvt|ltd|limited|llp|company|industries|industry|corp)\b", low)
+    ):
+        designation = line
+        continue
 
 
         # Name (clean – no number, no email, no website)
