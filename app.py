@@ -64,8 +64,10 @@ def run_ocr(image):
 
 # ================= SMART EXTRACTION =================
 DESIGNATION_WORDS = [
-    "manager", "engineer", "director", "sales", "marketing",
-    "executive", "officer", "ceo", "cto", "founder", "owner"
+    "manager", "engineer", "director", "sales",
+    "marketing", "executive", "officer", "ceo",
+    "cto", "founder", "owner", "lead", "head",
+    "consultant", "supervisor", "admin", "partner"
 ]
 
 def extract_data(text):
@@ -89,8 +91,11 @@ def extract_data(text):
             continue
 
         # Designation
-        if not designation and any(word in low for word in DESIGNATION_WORDS):
-            designation = line
+       if not designation:
+    for word in DESIGNATION_WORDS:
+        if re.search(rf"\b{word}\b", line, re.IGNORECASE):
+            designation = line.strip()
+            break
             continue
 
         # Name (clean – no number, no email, no website)
