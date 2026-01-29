@@ -81,8 +81,11 @@ def extract_data(text):
         # ---------- COMPANY ----------
         if not company:
             if re.search(
-                r"\b(pvt|private|ltd|limited|llp|industries|industry|company|corp|corporation)\b",
-                low
+                r"\b(pvt|private|ltd|limited|llp|industries|industry|company|corp|corporation|"
+                r"|pvt ltd|private limited|ltd|limited|llp|inc|co|corporation|company|impex|foods|tech|"
+                r"|organization|enterprises|industries|ventures|solutions|systems|group|associates|consultancy|services|"r")\b",
+                low,
+                 re.IGNORECASE
             ):
                 company = line
                 continue
@@ -92,17 +95,24 @@ def extract_data(text):
                 continue
 
 
-    # ALL CAPS company fallback
-    if line.isupper() and len(line.split()) >= 2:
-        company = line
-        continue
+    # ALL CAPS fallback
+        if line.isupper() and len(line.split()) >= 2:
+            company = line
+            continue
 
 
         # ---------- DESIGNATION ----------
         if not designation:
             if re.search(
-                r"\b(manager|engineer|director|executive director|owner|partner|founder|ceo|proprietor|head|president|vice president|vp|chairman|cfo|coo|cto|chief executive officer|chief financial officer|chief operating officer|chief technology officer|general manager|assistant manager|team lead|supervisor|engineer|developer|consultant|designer|administrator|co-founder|sales|marketing|executive|officer|ceo|cto|cfo|founder|owner|lead|head|consultant|supervisor|admin|partner)\b",
-                low
+                r"\b("r"manager|engineer|director|executive director|owner|partner|"
+                r"founder|ceo|proprietor|head|president|vice president|vp|chairman|"
+                r"cfo|coo|cto|chief executive officer|chief financial officer|"
+                r"chief operating officer|chief technology officer|general manager|"
+                r"assistant manager|team lead|supervisor|engineer|developer|consultant"
+                r"|designer|administrator|co-founder|sales|marketing|executive|officer"
+                r"|ceo|cto|cfo|founder|owner|lead|head|consultant|supervisor|admin|partner|"r")\b",
+                low,
+                re.IGNORECASE
             ):
                 designation = line
                 continue
