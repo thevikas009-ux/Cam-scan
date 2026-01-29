@@ -63,13 +63,6 @@ def run_ocr(image):
     return clean_text("\n".join(result))
 
 # ================= SMART EXTRACTION =================
-DESIGNATION_WORDS = [
-    "manager", "engineer", "director", "sales",
-    "marketing", "executive", "officer", "ceo",
-    "cto", "founder", "owner", "lead", "head",
-    "consultant", "supervisor", "admin", "partner"
-]
-
 def extract_data(text):
     lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 2]
 
@@ -85,40 +78,34 @@ def extract_data(text):
     for line in lines:
         low = line.lower()
 
-        # COMPANY NAME (SMART + CAPS SAFE) 
-       if not company:
-    # Case 1: Contains company keywords
-    if re.search(r"\b(pvt|private|ltd|limited|llp|industries|industry|company|corp|corporation)\b", low):
-        company = line
-        continue
+        # ---------- COMPANY ----------
+        if not company:
+            if re.search(r"\b(pvt|private|ltd|limited|llp|industries|industry|company|corp|corporation)\b", low):
+                company = line
+                continue
 
-    # Case 2: ALL CAPS line (probable company)
-    if line.isupper() and len(line.split()) >= 2:
-        company = line
-        continue
+            if line.isupper() and len(line.split()) >= 2:
+                company = line
+                continue
 
-        # Designation (CASE-INSENSITIVE, CAPS SAFE)
+        # ---------- DESIGNATION ----------
         if not designation:
+            if re.search(
+                r"\b(manager|engineer|director|sales|marketing|executive|officer|ceo|cto|cfo|founder|owner|lead|head|consultant|supervisor|admin|partner)\b",
+                low
+            ):
+                designation = line
+                continue
 
-    # Case 1: keyword based (case-insensitive)
-    if re.search(
-        r"\b(manager|engineer|director|sales|marketing|executive|officer|ceo|cto|cfo|founder|owner|lead|head|consultant|supervisor|admin|partner)\b",
-        low
-    ):
-        designation = line
-        continue
+            if (
+                line.isupper()
+                and 1 <= len(line.split()) <= 5
+                and not re.search(r"\b(pvt|ltd|limited|llp|company|industries|industry|corp)\b", low)
+            ):
+                designation = line
+                continue
 
-    # Case 2: ALL CAPS role (but NOT company)
-    if (
-        line.isupper()
-        and 1 <= len(line.split()) <= 5
-        and not re.search(r"\b(pvt|ltd|limited|llp|company|industries|industry|corp)\b", low)
-    ):
-        designation = line
-        continue
-
-
-        # Name (clean – no number, no email, no website)
+        # ---------- NAME ----------
         if not name:
             if (
                 not re.search(r"\d", line)
@@ -130,17 +117,16 @@ def extract_data(text):
                 name = line
                 continue
 
-        # Address
+        # ---------- ADDRESS ----------
         if any(x in low for x in ["road", "street", "sector", "block", "india", "pin"]):
             address_lines.append(line)
 
     address = ", ".join(address_lines)
 
     return company, phone, email, name, designation, address, website
+
 # ================= GOOGLE SHEET AUTH =================
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets"
-]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 creds = service_account.Credentials.from_service_account_info(
     st.secrets["gcp_service_account"],
@@ -198,21 +184,20 @@ if image:
     if st.button("✅ Save to Google Sheet"):
         try:
             sheet.append_row([
-                full_text,                     # A Full OCR Text
-                file_name,                     # B Image Name
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # C Timestamp
-                company,                       # D Company
-                phone,                         # E Phone
-                email,                         # F Email
-                name,                          # G Name
-                designation,                   # H Designation
-                address,                       # I Address
-                website,                       # J Website
-                ""                              # K Drive Link (EMPTY)
+                full_text,
+                file_name,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                company,
+                phone,
+                email,
+                name,
+                designation,
+                address,
+                website,
+                ""   # Drive link intentionally blank
             ])
 
             st.success("🎉 Business card uploaded successfully")
-            st.info("⬆️ Upload next card using options above")
 
         except Exception as e:
             st.error(f"❌ Failed to save: {e}")
