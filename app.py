@@ -14,15 +14,11 @@ st.set_page_config(
     layout="centered"
 )
 
-# ================= SESSION =================
-if "page" not in st.session_state:
-    st.session_state.page = "main"
-
-# ================= HEADER (LOGO + COMPANY NAME) =================
+# ================= HEADER =================
 def header():
     col1, col2 = st.columns([2, 6])
     with col1:
-        st.image("logo.png", width=220)   # logo.png must be in repo root
+        st.image("logo.png", width=200)
     with col2:
         st.markdown(
             """
@@ -30,16 +26,14 @@ def header():
                 ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
             </h2>
             <p style="color:gray;margin-top:4px;">
-                Smart Visiting Card OCR (Free AI-like)
+                Visiting Card OCR • Mobile Safe
             </p>
             """,
             unsafe_allow_html=True
         )
     st.divider()
 
-# 🔥 IMPORTANT: CALL HEADER HERE
 header()
-
 st.title("📸 Visiting Card OCR to Google Sheet")
 
 # ================= OCR LOAD =================
@@ -49,6 +43,14 @@ def load_reader():
 
 reader = load_reader()
 
+# ================= IMAGE SAFE HELPERS =================
+def resize_image(image, max_width=1000):
+    if image.width > max_width:
+        ratio = max_width / image.width
+        new_height = int(image.height * ratio)
+        image = image.resize((max_width, new_height))
+    return image
+
 def clean_text(text):
     text = re.sub(r"[^\x00-\x7F]+", " ", text)
     text = re.sub(r"\s+", " ", text)
@@ -57,8 +59,7 @@ def clean_text(text):
 def run_ocr(image):
     img = np.array(image.convert("RGB"))
     result = reader.readtext(img, detail=0, paragraph=True)
-    text = "\n".join(result)
-    return clean_text(text)
+    return clean_text("\n".join(result))
 
 # ================= GOOGLE SHEET AUTH =================
 SCOPES = [
@@ -74,7 +75,7 @@ creds = service_account.Credentials.from_service_account_info(
 client = gspread.authorize(creds)
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
-# ================= IMAGE INPUT =================
+# ================= IMAGE SOURCE =================
 option = st.radio(
     "Choose image source",
     ["Upload Image", "Open Camera"],
@@ -84,19 +85,27 @@ option = st.radio(
 image = None
 file_name = ""
 
+# ================= UPLOAD =================
 if option == "Upload Image":
     uploaded = st.file_uploader(
-        "Upload image",
+        "Upload image (max 3MB)",
         type=["jpg", "jpeg", "png"]
     )
     if uploaded:
+        if uploaded.size > 3 * 1024 * 1024:
+            st.error("❌ Image too large. Please upload under 3MB.")
+            st.stop()
+
         image = Image.open(io.BytesIO(uploaded.read()))
+        image = resize_image(image)
         file_name = uploaded.name
 
+# ================= CAMERA =================
 elif option == "Open Camera":
     cam = st.camera_input("Click to capture")
     if cam:
         image = Image.open(io.BytesIO(cam.read()))
+        image = resize_image(image)
         file_name = "camera_image"
 
 # ================= PROCESS =================
@@ -119,9 +128,7 @@ if image:
 
             st.success("🎉 Business card uploaded successfully")
 
-            # RESET PAGE AFTER SUBMIT
-            st.session_state.clear()
-            st.rerun()
+            st.info("⬇️ Upload another card using options above")
 
         except Exception as e:
             st.error(f"❌ Failed to save: {e}")
