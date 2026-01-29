@@ -6,3 +6,5 @@ gspread
 oauth2client
 torch
 torchvision
+google-api-python-client
+
