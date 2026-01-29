@@ -138,8 +138,17 @@ def extract_data(text):
                 continue
 
         # ---------- ADDRESS ----------
-        if any(x in low for x in ["road", "street", "sector", "block", "india", "pin","plot","no","wing","floor","sector","phase","building","block","road","street","lane","market","near","opp","opposite","beside","junction","area","complex","society","colony","village","town","city","state","india","pincode","pin","nr","station","gali","bazaar","chowk","park","house","office","suite","apartment","apt","flat"
-]):
+        if (
+        not designation
+        and not company
+        and any(x in low 
+                for x in ["road", "street", "sector", "block", "india", "pin","plot","no","wing","floor",
+                          "sector","phase","building","block","road","street","lane","market","near","opp",
+                          "opposite","beside","junction","area","complex","society","colony","village","town",
+                          "city","state","india","pincode","pin","nr","station","gali","bazaar","chowk","park",
+                          "house","office","suite","apartment","apt","flat"]
+               )
+              ):
             address_lines.append(line)
 
     address = ", ".join(address_lines)
