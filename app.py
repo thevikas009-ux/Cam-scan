@@ -1,98 +1,106 @@
 import streamlit as st
-import easyocr
-import numpy as np
-from PIL import Image, ImageEnhance, ExifTags
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
-from datetime import datetime
 import re
 import io
+from PIL import Image, ImageOps
+import pytesseract
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+import gspread
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Electronics Devices Worldwide", layout="centered")
+# ---------------- CONFIG ----------------
+st.set_page_config(page_title="Business Card Scanner", layout="centered")
 
-# ---------------- SESSION STATE ----------------
-if "page" not in st.session_state:
-    st.session_state.page = "main"
+FOLDER_ID = "1R3HdbUKtV3ny2Twp0x02yvVp7pz6qdT0"
 
-# ---------------- GOOGLE AUTH ----------------
-scope = [
+SCOPES = [
     "https://www.googleapis.com/auth/drive",
-    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/spreadsheets"
 ]
 
-creds = ServiceAccountCredentials.from_json_keyfile_dict(
-    st.secrets["gcp_service_account"], scope
+# ---------------- AUTH ----------------
+creds = service_account.Credentials.from_service_account_file(
+    "service_account.json", scopes=SCOPES
 )
 
-gs_client = gspread.authorize(creds)
-sheet = gs_client.open_by_key(st.secrets["sheet_id"]).sheet1
-
 drive_service = build("drive", "v3", credentials=creds)
+gc = gspread.authorize(creds)
 
-# ---------------- OCR ----------------
-@st.cache_resource
-def load_reader():
-    return easyocr.Reader(['en'], gpu=False)
-
-reader = load_reader()
-
-# ---------------- IMAGE HELPERS ----------------
-def fix_orientation(img):
-    try:
-        exif = img._getexif()
-        if exif:
-            for k, v in ExifTags.TAGS.items():
-                if v == "Orientation":
-                    o = exif.get(k)
-                    if o == 3: img = img.rotate(180, expand=True)
-                    elif o == 6: img = img.rotate(270, expand=True)
-                    elif o == 8: img = img.rotate(90, expand=True)
-    except:
-        pass
-    return img
-
-def enhance(img):
+# ---------------- IMAGE & OCR ----------------
+def preprocess_image(img):
+    img = ImageOps.exif_transpose(img)
     img = img.convert("L")
-    img = ImageEnhance.Contrast(img).enhance(2.3)
-    img = ImageEnhance.Sharpness(img).enhance(2.0)
+    img = ImageOps.autocontrast(img)
     return img
+
+def extract_text(img):
+    return pytesseract.image_to_string(img, config="--oem 3 --psm 6")
 
 def clean_text(text):
-    out = []
+    lines = []
     for l in text.split("\n"):
-        l = re.sub(r'[^A-Za-z0-9@./:+\- ()]', ' ', l)
-        l = re.sub(r'\s+', ' ', l).strip()
-        if len(l) > 3:
-            out.append(l)
-    return "\n".join(out)
+        l = l.strip()
+        if len(l) > 2:
+            lines.append(l)
+    return "\n".join(lines)
 
-def ocr_any_angle(img):
-    best = ""
-    for a in [0, 90, 180, 270]:
-        r = enhance(img.rotate(a, expand=True))
-        arr = np.array(r.convert("RGB"))
-        txt = reader.readtext(arr, detail=0, paragraph=True)
-        txt = clean_text("\n".join(txt))
-        if len(txt) > len(best):
-            best = txt
-    return best
-
-# ---------------- DATA EXTRACT ----------------
-def find(pattern, text):
-    m = re.search(pattern, text, re.I)
+# ---------------- AI-LIKE EXTRACTION ----------------
+def find_email(text):
+    m = re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", text)
     return m.group(0) if m else ""
 
-# ---------------- DRIVE UPLOAD ----------------
-def upload_to_drive(image, name):
-    buf = io.BytesIO()
-    image.save(buf, format="JPEG")
-    buf.seek(0)
+def find_all_phones(text):
+    phones = re.findall(r"\+?\d[\d\s\-]{8,}\d", text)
+    return list(set([p.replace(" ", "").replace("-", "") for p in phones]))
 
-    file_metadata = {"name": name}
-    media = MediaIoBaseUpload(buf, mimetype="image/jpeg")
+def find_whatsapp(text):
+    phones = find_all_phones(text)
+    text_lower = text.lower()
+
+    for p in phones:
+        if "whatsapp" in text_lower or "wa.me" in text_lower or "wa " in text_lower:
+            return p
+
+    return phones[0] if phones else ""
+
+def find_website(text):
+    m = re.search(r"(https?:\/\/[^\s]+|www\.[^\s]+)", text, re.I)
+    if m:
+        url = m.group(0)
+        if not url.lower().startswith("http"):
+            url = "https://" + url
+        return url
+    return ""
+
+def extract_name(text):
+    blacklist = ["mobile", "phone", "email", "www", "http", "whatsapp"]
+    for line in text.split("\n")[:5]:
+        if not any(b in line.lower() for b in blacklist):
+            if len(line.split()) <= 4 and not re.search(r"\d", line):
+                return line.title()
+    return ""
+
+def extract_company(text):
+    keywords = [
+        "pvt", "ltd", "llp", "inc", "electronics", "technologies",
+        "solutions", "systems", "industries", "worldwide"
+    ]
+
+    for line in text.split("\n"):
+        l = line.lower()
+        if any(k in l for k in keywords):
+            return line.upper()
+
+    return ""
+
+# ---------------- DRIVE ----------------
+def upload_to_drive(image, filename):
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    buffer.seek(0)
+
+    file_metadata = {"name": filename, "parents": [FOLDER_ID]}
+    media = MediaIoBaseUpload(buffer, mimetype="image/jpeg")
 
     file = drive_service.files().create(
         body=file_metadata,
@@ -100,80 +108,74 @@ def upload_to_drive(image, name):
         fields="id"
     ).execute()
 
+    file_id = file["id"]
+
     drive_service.permissions().create(
-        fileId=file["id"],
+        fileId=file_id,
         body={"type": "anyone", "role": "reader"}
     ).execute()
 
-    return f"https://drive.google.com/file/d/{file['id']}/view"
+    return f"https://drive.google.com/file/d/{file_id}/view"
 
-# ================= MAIN PAGE =================
-if st.session_state.page == "main":
+# ---------------- SHEET ----------------
+def save_to_sheet(row):
+    sh = gc.open("Business_Card_Data")
+    ws = sh.sheet1
+    ws.append_row(row)
 
-    col1, col2 = st.columns([2, 6])
-    with col1:
-        st.image("logo.png", width=220)
-    with col2:
-        st.markdown(
-            "<h2>ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h2>"
-            "<p style='color:gray;'>Visiting Card OCR</p>",
-            unsafe_allow_html=True
-        )
+# ---------------- SESSION ----------------
+if "page" not in st.session_state:
+    st.session_state.page = "upload"
 
-    st.divider()
-    st.title("📸 Upload Business Card")
+# ---------------- UI ----------------
+if st.session_state.page == "upload":
 
-    source = st.radio("Select Image Source", ["Upload Image", "Open Camera"], horizontal=True)
+    st.title("📇 Business Card Scanner")
 
-    image = None
-    filename = ""
+    uploaded = st.file_uploader(
+        "Upload Business Card Image",
+        type=["jpg", "jpeg", "png"]
+    )
 
-    if source == "Upload Image":
-        f = st.file_uploader("Upload image", type=["jpg","jpeg","png"])
-        if f:
-            image = Image.open(f)
-            filename = f.name
-
-    if source == "Open Camera":
-        cam = st.camera_input("Open Camera")
-        if cam:
-            image = Image.open(cam)
-            filename = "camera_image.jpg"
-
-    if image:
-        image = fix_orientation(image)
-        st.image(image, use_column_width=True)
-
-        with st.spinner("Scanning card..."):
-            text = ocr_any_angle(image)
-
-        st.text_area("OCR Output", text, height=220)
+    if uploaded:
+        image = Image.open(uploaded)
+        st.image(image, use_container_width=True)
 
         if st.button("✅ Submit"):
-            drive_link = upload_to_drive(image, filename)
+            with st.spinner("Processing..."):
 
-            sheet.append_row([
-                text,
-                filename,
-                str(datetime.now()),
-                find(r'[A-Z ]{4,}', text),
-                find(r'\+?\d{10,14}', text),
-                find(r'[\w\.-]+@[\w\.-]+\.\w+', text),
-                "",
-                "",
-                "",
-                find(r'(https?://\S+|www\.\S+)', text),
-                drive_link
-            ])
+                img = preprocess_image(image)
+                raw = extract_text(img)
+                text = clean_text(raw)
+
+                name = extract_name(text)
+                company = extract_company(text)
+                email = find_email(text)
+                whatsapp = find_whatsapp(text)
+                website = find_website(text)
+
+                drive_link = upload_to_drive(
+                    image,
+                    uploaded.name.replace(" ", "_")
+                )
+
+                save_to_sheet([
+                    name,
+                    company,
+                    whatsapp,
+                    email,
+                    website,
+                    drive_link,
+                    text
+                ])
 
             st.session_state.page = "success"
             st.rerun()
 
-# ================= SUCCESS PAGE =================
-if st.session_state.page == "success":
-    st.success("🎉 Business Card Uploaded Successfully")
-    st.markdown("Your card details & image are safely saved.")
+elif st.session_state.page == "success":
 
-    if st.button("⬅️ Main Menu"):
-        st.session_state.page = "main"
+    st.success("🎉 Business Card Uploaded Successfully")
+
+    if st.button("🏠 Main Menu"):
+        st.session_state.page = "upload"
         st.rerun()
