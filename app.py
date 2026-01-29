@@ -14,36 +14,27 @@ st.set_page_config(
     layout="centered"
 )
 
-# ---------------- HEADER BAND (LOGO + COMPANY NAME) ----------------
-LOGO_URL = "https://drive.google.com/uc?export=view&id=1xq5ehfCCw8Ncv5FxS845Oxh0eAjxR5-I"
+# ================= PAGE CONFIG =================
+st.set_page_config(page_title="Electronics Devices Worldwide", layout="centered")
 
-st.markdown(
-    f"""
-    <div style="
-        background-color:#0f172a;
-        padding:15px;
-        border-radius:12px;
-        display:flex;
-        align-items:center;
-        gap:15px;
-        justify-content:center;
-    ">
-        <img src="{LOGO_URL}" width="70"/>
-        <div style="color:white;">
-            <div style="font-size:18px;font-weight:700;">
-                ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
-            </div>
-            <div style="font-size:12px;opacity:0.8;">
-                Smart OCR • Image to Google Sheet
-            </div>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+# ================= SESSION =================
+if "page" not in st.session_state:
+    st.session_state.page = "main"
 
-st.markdown("<br>", unsafe_allow_html=True)
-st.title("📸 Visiting Card OCR")
+# ================= HEADER =================
+def header():
+    col1, col2 = st.columns([2, 6])
+    with col1:
+        st.image("logo.png", width=220)
+    with col2:
+        st.markdown(
+            """
+            <h2 style="margin-bottom:0;">ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h2>
+            <p style="color:gray;margin-top:4px;">Smart Visiting Card OCR (Free AI-like)</p>
+            """,
+            unsafe_allow_html=True
+        )
+    st.divider()
 
 # ---------------- OCR LOAD ----------------
 @st.cache_resource
