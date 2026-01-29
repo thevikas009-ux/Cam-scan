@@ -8,35 +8,41 @@ from datetime import datetime
 import io
 import re
 
-# ---------------- PAGE CONFIG ----------------
+# ================= PAGE CONFIG =================
 st.set_page_config(
     page_title="Electronics Devices Worldwide",
     layout="centered"
 )
 
-# ================= PAGE CONFIG =================
-st.set_page_config(page_title="Electronics Devices Worldwide", layout="centered")
-
 # ================= SESSION =================
 if "page" not in st.session_state:
     st.session_state.page = "main"
 
-# ================= HEADER =================
+# ================= HEADER (LOGO + COMPANY NAME) =================
 def header():
     col1, col2 = st.columns([2, 6])
     with col1:
-        st.image("logo.png", width=220)
+        st.image("logo.png", width=220)   # logo.png must be in repo root
     with col2:
         st.markdown(
             """
-            <h2 style="margin-bottom:0;">ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h2>
-            <p style="color:gray;margin-top:4px;">Smart Visiting Card OCR (Free AI-like)</p>
+            <h2 style="margin-bottom:0;">
+                ELECTRONICS DEVICES WORLDWIDE PVT. LTD.
+            </h2>
+            <p style="color:gray;margin-top:4px;">
+                Smart Visiting Card OCR (Free AI-like)
+            </p>
             """,
             unsafe_allow_html=True
         )
     st.divider()
 
-# ---------------- OCR LOAD ----------------
+# 🔥 IMPORTANT: CALL HEADER HERE
+header()
+
+st.title("📸 Visiting Card OCR to Google Sheet")
+
+# ================= OCR LOAD =================
 @st.cache_resource
 def load_reader():
     return easyocr.Reader(["en"], gpu=False)
@@ -54,7 +60,7 @@ def run_ocr(image):
     text = "\n".join(result)
     return clean_text(text)
 
-# ---------------- GOOGLE SHEET AUTH ----------------
+# ================= GOOGLE SHEET AUTH =================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
@@ -68,7 +74,7 @@ creds = service_account.Credentials.from_service_account_info(
 client = gspread.authorize(creds)
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
-# ---------------- IMAGE INPUT ----------------
+# ================= IMAGE INPUT =================
 option = st.radio(
     "Choose image source",
     ["Upload Image", "Open Camera"],
@@ -93,7 +99,7 @@ elif option == "Open Camera":
         image = Image.open(io.BytesIO(cam.read()))
         file_name = "camera_image"
 
-# ---------------- PROCESS ----------------
+# ================= PROCESS =================
 if image:
     st.image(image, use_column_width=True)
 
@@ -113,7 +119,7 @@ if image:
 
             st.success("🎉 Business card uploaded successfully")
 
-            # RESET PAGE
+            # RESET PAGE AFTER SUBMIT
             st.session_state.clear()
             st.rerun()
 
