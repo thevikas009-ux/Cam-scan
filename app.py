@@ -90,13 +90,15 @@ def extract_data(text):
             company = line
             continue
 
-        # Designation
-       if not designation:
-    for word in DESIGNATION_WORDS:
-        if re.search(rf"\b{word}\b", line, re.IGNORECASE):
-            designation = line.strip()
-            break
-            continue
+        # Designation (CASE-INSENSITIVE, CAPS SAFE)
+        if not designation:
+            for word in DESIGNATION_WORDS:
+                if re.search(rf"\b{word}\b", line, re.IGNORECASE):
+                    designation = line.strip()
+                    break
+            if designation:
+                continue
+
 
         # Name (clean – no number, no email, no website)
         if not name:
