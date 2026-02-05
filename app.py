@@ -1,7 +1,7 @@
 import streamlit as st
 import easyocr
 import numpy as np
-from PIL import Image
+from PIL import Image, ExifTags
 import gspread
 from google.oauth2 import service_account
 from datetime import datetime
@@ -33,6 +33,30 @@ def header():
 
 header()
 st.title("📸 Visiting Card OCR to Google Sheet")
+
+# ================= IMAGE FIX =================
+def fix_image_orientation(image):
+    try:
+        for orientation in ExifTags.TAGS.keys():
+            if ExifTags.TAGS[orientation]=='Orientation':
+                break
+        exif = dict(image._getexif().items())
+        if exif.get(orientation) == 3:
+            image = image.rotate(180, expand=True)
+        elif exif.get(orientation) == 6:
+            image = image.rotate(270, expand=True)
+        elif exif.get(orientation) == 8:
+            image = image.rotate(90, expand=True)
+    except:
+        pass
+    return image
+
+def resize_image(image, max_width=1000):
+    if image.width > max_width:
+        ratio = max_width / image.width
+        new_height = int(image.height * ratio)
+        image = image.resize((max_width, new_height))
+    return image
 
 # ================= OCR =================
 @st.cache_resource
@@ -115,6 +139,8 @@ file_name = ""
 if uploaded:
     try:
         image = Image.open(io.BytesIO(uploaded.read()))
+        image = fix_image_orientation(image)
+        image = resize_image(image)
         file_name = uploaded.name
     except Exception:
         st.warning("⚠️ Image open nahi ho paayi. Please try another image.")
