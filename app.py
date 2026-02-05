@@ -78,81 +78,24 @@ def extract_data(text):
     for line in lines:
         low = line.lower()
 
-        # ---------- COMPANY ----------
-        if not company:
-            if re.search(
-                r"\b(pvt|private|ltd|limited|llp|industries|industry|company|corp|corporation|"
-                r"|pvt ltd|private limited|ltd|limited|llp|inc|co|corporation|company|impex|foods|tech|"
-                r"|organization|enterprises|industries|ventures|solutions|systems|group|associates|consultancy|services|"r")\b",
-                low,
-                 re.IGNORECASE
-            ):
-                company = line
-                continue
-
-            if line.isupper() and len(line.split()) >= 2:
-                company = line
-                continue
-
-
-    # ALL CAPS fallback
-        if line.isupper() and len(line.split()) >= 2:
+        if not company and re.search(r"\b(pvt|private|ltd|limited|llp|company|corp|industries|services)\b", low):
             company = line
             continue
 
+        if not designation and re.search(
+            r"\b(manager|engineer|director|owner|partner|founder|ceo|executive|officer)\b", low
+        ):
+            designation = line
+            continue
 
-        # ---------- DESIGNATION ----------
-        if not designation:
-            if re.search(
-                r"\b("r"manager|engineer|director|executive director|owner|partner|"
-                r"founder|ceo|proprietor|head|president|vice president|vp|chairman|"
-                r"cfo|coo|cto|chief executive officer|chief financial officer|"
-                r"chief operating officer|chief technology officer|general manager|"
-                r"assistant manager|team lead|supervisor|engineer|developer|consultant"
-                r"|designer|administrator|co-founder|sales|marketing|executive|officer"
-                r"|ceo|cto|cfo|founder|owner|lead|head|consultant|supervisor|admin|partner|"r")\b",
-                low,
-                re.IGNORECASE
-            ):
-                designation = line
-                continue
+        if not name and not re.search(r"\d|@|www|http", low) and len(line.split()) <= 4:
+            name = line
+            continue
 
-            if (
-                line.isupper()
-                and 1 <= len(line.split()) <= 5
-                and not re.search(r"\b(pvt|ltd|limited|llp|company|industries|industry|corp)\b", low)
-            ):
-                designation = line
-                continue
-
-        # ---------- NAME ----------
-        if not name:
-            if (
-                not re.search(r"\d", line)
-                and "@" not in line
-                and "www" not in low
-                and "http" not in low
-                and len(line.split()) <= 4
-            ):
-                name = line
-                continue
-
-        # ---------- ADDRESS ----------
-        if (
-        not designation
-        and not company
-        and any(x in low 
-                for x in ["road", "street", "sector", "block", "india", "pin","plot","no","wing","floor",
-                          "sector","phase","building","block","road","street","lane","market","near","opp",
-                          "opposite","beside","junction","area","complex","society","colony","village","town",
-                          "city","state","india","pincode","pin","nr","station","gali","bazaar","chowk","park",
-                          "house","office","suite","apartment","apt","flat"]
-               )
-              ):
+        if any(x in low for x in ["road", "street", "sector", "block", "india", "pin", "plot", "building"]):
             address_lines.append(line)
 
     address = ", ".join(address_lines)
-
     return company, phone, email, name, designation, address, website
 
 # ================= GOOGLE SHEET AUTH =================
@@ -211,6 +154,31 @@ if image:
 
     company, phone, email, name, designation, address, website = extract_data(full_text)
 
+    # ================= NEW CHECKBOX SECTION =================
+    st.subheader("Inspection Options")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        seal_integrity = st.checkbox("Seal Integrity")
+    with col2:
+        robotics = st.checkbox("Robotics")
+    with col3:
+        cap_clouser = st.checkbox("Cap and Clouser")
+
+    selected_options = []
+    if seal_integrity:
+        selected_options.append("Seal Integrity")
+    if robotics:
+        selected_options.append("Robotics")
+    if cap_clouser:
+        selected_options.append("Cap and Clouser")
+
+    selected_options_str = ", ".join(selected_options)
+
+    st.subheader("Remarks")
+    remarks = st.text_area("Enter remarks", height=120)
+
+    # ================= SAVE =================
     if st.button("✅ Save to Google Sheet"):
         try:
             sheet.append_row([
@@ -224,10 +192,12 @@ if image:
                 designation,
                 address,
                 website,
-                ""   # Drive link intentionally blank
+                selected_options_str,
+                remarks,
+                ""
             ])
 
-            st.success("🎉 Business card uploaded successfully")
+            st.success("🎉 Data saved successfully")
 
         except Exception as e:
             st.error(f"❌ Failed to save: {e}")
