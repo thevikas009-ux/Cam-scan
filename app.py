@@ -170,6 +170,26 @@ if image:
     st.text_input("WhatsApp", whatsapp)
     st.text_input("Email", email)
 
+    # ================= INSPECTION CHECKBOXES =================
+    st.subheader("Inspection Options")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        seal_integrity = st.checkbox("Seal Integrity")
+    with col2:
+        robotics = st.checkbox("Robotics")
+    with col3:
+        cap_clouser = st.checkbox("Cap and Clouser")
+
+    selected_options = []
+    if seal_integrity:
+        selected_options.append("Seal Integrity")
+    if robotics:
+        selected_options.append("Robotics")
+    if cap_clouser:
+        selected_options.append("Cap and Clouser")
+
+    selected_options_str = ", ".join(selected_options)
+
     remarks = st.text_area("Remarks")
 
     col1, col2 = st.columns(2)
@@ -179,7 +199,6 @@ if image:
             if sheet is None:
                 st.info("ℹ️ Sheet connection fail. Data save nahi ho paaya.")
             else:
-                # ================= AUTOMATIC RETRY =================
                 saved = False
                 attempts = 0
                 max_attempts = 3
@@ -197,6 +216,7 @@ if image:
                             designation,
                             address,
                             website,
+                            selected_options_str,
                             remarks
                         ])
                         saved = True
