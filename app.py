@@ -7,6 +7,10 @@ from google.oauth2 import service_account
 from datetime import datetime
 import io
 import re
+import time
+
+# ================= HIDE TRACEBACK =================
+st.set_option("client.showErrorDetails", False)
 
 # ================= SESSION STATE =================
 if "uploader_key" not in st.session_state:
@@ -33,14 +37,22 @@ st.title("📸 Visiting Card OCR to Google Sheet")
 # ================= OCR =================
 @st.cache_resource
 def load_reader():
-    return easyocr.Reader(["en"], gpu=False)
+    try:
+        return easyocr.Reader(["en"], gpu=False)
+    except Exception:
+        return None
 
 reader = load_reader()
 
 def run_ocr(image):
-    img = np.array(image.convert("RGB"))
-    result = reader.readtext(img, detail=0, paragraph=False)
-    return [r.strip() for r in result if len(r.strip()) > 2]
+    if reader is None:
+        return []
+    try:
+        img = np.array(image.convert("RGB"))
+        result = reader.readtext(img, detail=0, paragraph=False)
+        return [r.strip() for r in result if len(r.strip()) > 2]
+    except Exception:
+        return []
 
 # ================= SMART EXTRACTION =================
 def extract_data(lines):
@@ -68,13 +80,10 @@ def extract_data(lines):
 
     for line in lines:
         low = line.lower()
-
         if not company and re.search(r"\b(pvt|private|ltd|limited|company|corp|industries)\b", low):
             company = line
-
         if not designation and re.search(r"\b(manager|director|engineer|owner|ceo|founder|executive)\b", low):
             designation = line
-
         if any(x in low for x in ["road", "street", "sector", "block", "india", "pin", "plot", "building"]):
             address_lines.append(line)
 
@@ -84,11 +93,14 @@ def extract_data(lines):
 
 # ================= GOOGLE SHEET =================
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-creds = service_account.Credentials.from_service_account_info(
-    st.secrets["gcp_service_account"], scopes=SCOPES
-)
-client = gspread.authorize(creds)
-sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
+try:
+    creds = service_account.Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"], scopes=SCOPES
+    )
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
+except Exception:
+    sheet = None
 
 # ================= IMAGE UPLOAD ONLY =================
 uploaded = st.file_uploader(
@@ -101,14 +113,20 @@ image = None
 file_name = ""
 
 if uploaded:
-    image = Image.open(io.BytesIO(uploaded.read()))
-    file_name = uploaded.name
+    try:
+        image = Image.open(io.BytesIO(uploaded.read()))
+        file_name = uploaded.name
+    except Exception:
+        st.warning("⚠️ Image open nahi ho paayi. Please try another image.")
 
 # ================= PROCESS =================
 if image:
     st.image(image, use_column_width=True)
 
     lines = run_ocr(image)
+    if not lines:
+        st.warning("⚠️ Text detect nahi hua. Clear image upload karein.")
+        st.stop()
 
     full_text, company, name, phone, whatsapp, email, designation, address, website = extract_data(lines)
 
@@ -132,23 +150,41 @@ if image:
 
     with col1:
         if st.button("✅ Save"):
-            sheet.append_row([
-                full_text,
-                file_name,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                company,
-                person_name,
-                phone,
-                whatsapp,
-                email,
-                designation,
-                address,
-                website,
-                remarks
-            ])
-            st.success("Saved successfully")
+            if sheet is None:
+                st.info("ℹ️ Sheet connection fail. Data save nahi ho paaya.")
+            else:
+                # ================= AUTOMATIC RETRY =================
+                saved = False
+                attempts = 0
+                max_attempts = 3
+                while not saved and attempts < max_attempts:
+                    try:
+                        sheet.append_row([
+                            full_text,
+                            file_name,
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            company,
+                            person_name,
+                            phone,
+                            whatsapp,
+                            email,
+                            designation,
+                            address,
+                            website,
+                            remarks
+                        ])
+                        saved = True
+                        st.success("✅ Data saved successfully")
+                    except Exception:
+                        attempts += 1
+                        time.sleep(2)
+                if not saved:
+                    st.info("ℹ️ Data save nahi ho paaya. Internet ya Sheet check karein.")
 
     with col2:
         if st.button("🔄 Reset"):
-            st.session_state.uploader_key += 1
-            st.rerun()
+            try:
+                st.session_state.uploader_key += 1
+                st.rerun()
+            except Exception:
+                pass
