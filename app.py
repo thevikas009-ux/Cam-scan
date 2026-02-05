@@ -8,6 +8,10 @@ from datetime import datetime
 import io
 import re
 
+# ================= SESSION INIT (RESET SUPPORT) =================
+if "reset" not in st.session_state:
+    st.session_state.reset = False
+
 # ================= PAGE CONFIG =================
 st.set_page_config(
     page_title="Electronics Devices Worldwide",
@@ -67,7 +71,7 @@ def extract_data(text):
     lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 2]
 
     phone = ", ".join(set(re.findall(r"\+?\d[\d\s\-]{8,15}", text)))
-    whatsapp = ", ".join(set(re.findall(r"\+?\d[\d\s\-]{8,15}", text)))  # ✅ WhatsApp added
+    whatsapp = ", ".join(set(re.findall(r"\+?\d[\d\s\-]{8,15}", text)))
     email = ", ".join(set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)))
     website = ", ".join(set(re.findall(r"(?:www\.|https?://)[^\s]+", text)))
 
@@ -155,7 +159,6 @@ if image:
 
     company, phone, whatsapp, email, name, designation, address, website = extract_data(full_text)
 
-    # ✅ WhatsApp show in UI
     st.text_input("WhatsApp Number", whatsapp)
 
     # ================= CHECKBOX SECTION =================
@@ -182,8 +185,16 @@ if image:
     st.subheader("Remarks")
     remarks = st.text_area("Enter remarks", height=120)
 
-    # ================= SAVE =================
-    if st.button("✅ Save to Google Sheet"):
+    # ================= SAVE + RESET =================
+    col_save, col_reset = st.columns(2)
+
+    with col_save:
+        save_clicked = st.button("✅ Save to Google Sheet")
+
+    with col_reset:
+        reset_clicked = st.button("🔄 Reset Page")
+
+    if save_clicked:
         try:
             sheet.append_row([
                 full_text,
@@ -191,7 +202,7 @@ if image:
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 company,
                 phone,
-                whatsapp,   # ✅ WhatsApp saved
+                whatsapp,
                 email,
                 name,
                 designation,
@@ -201,8 +212,11 @@ if image:
                 remarks,
                 ""
             ])
-
             st.success("🎉 Data saved successfully")
 
         except Exception as e:
             st.error(f"❌ Failed to save: {e}")
+
+    if reset_clicked:
+        st.session_state.clear()
+        st.rerun()
