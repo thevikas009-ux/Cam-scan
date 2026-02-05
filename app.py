@@ -67,6 +67,7 @@ def extract_data(text):
     lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 2]
 
     phone = ", ".join(set(re.findall(r"\+?\d[\d\s\-]{8,15}", text)))
+    whatsapp = ", ".join(set(re.findall(r"\+?\d[\d\s\-]{8,15}", text)))  # ✅ WhatsApp added
     email = ", ".join(set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)))
     website = ", ".join(set(re.findall(r"(?:www\.|https?://)[^\s]+", text)))
 
@@ -96,7 +97,7 @@ def extract_data(text):
             address_lines.append(line)
 
     address = ", ".join(address_lines)
-    return company, phone, email, name, designation, address, website
+    return company, phone, whatsapp, email, name, designation, address, website
 
 # ================= GOOGLE SHEET AUTH =================
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -152,9 +153,12 @@ if image:
     st.subheader("Extracted Text")
     st.text_area("OCR Output", full_text, height=220)
 
-    company, phone, email, name, designation, address, website = extract_data(full_text)
+    company, phone, whatsapp, email, name, designation, address, website = extract_data(full_text)
 
-    # ================= NEW CHECKBOX SECTION =================
+    # ✅ WhatsApp show in UI
+    st.text_input("WhatsApp Number", whatsapp)
+
+    # ================= CHECKBOX SECTION =================
     st.subheader("Inspection Options")
 
     col1, col2, col3 = st.columns(3)
@@ -187,6 +191,7 @@ if image:
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 company,
                 phone,
+                whatsapp,   # ✅ WhatsApp saved
                 email,
                 name,
                 designation,
