@@ -53,7 +53,6 @@ def extract_data(lines):
     email = ", ".join(set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", full_text)))
     website = ", ".join(set(re.findall(r"(?:www\.|https?://)[^\s]+", full_text)))
 
-    # 🔥 PERSON NAME FROM LINE ABOVE PHONE
     name = ""
     if phone:
         for i, line in enumerate(lines):
@@ -91,35 +90,19 @@ creds = service_account.Credentials.from_service_account_info(
 client = gspread.authorize(creds)
 sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 
-# ================= IMAGE INPUT =================
-option = st.radio(
-    "Choose image source",
-    ["Upload Image", "Open Camera"],
-    horizontal=True,
-    key=f"src_{st.session_state.uploader_key}"
+# ================= IMAGE UPLOAD ONLY =================
+uploaded = st.file_uploader(
+    "Upload visiting card image",
+    type=["jpg", "jpeg", "png"],
+    key=f"upload_{st.session_state.uploader_key}"
 )
 
 image = None
 file_name = ""
 
-if option == "Upload Image":
-    uploaded = st.file_uploader(
-        "Upload image",
-        type=["jpg", "jpeg", "png"],
-        key=f"up_{st.session_state.uploader_key}"
-    )
-    if uploaded:
-        image = Image.open(io.BytesIO(uploaded.read()))
-        file_name = uploaded.name
-
-elif option == "Open Camera":
-    cam = st.camera_input(
-        "Capture image",
-        key=f"cam_{st.session_state.uploader_key}"
-    )
-    if cam:
-        image = Image.open(io.BytesIO(cam.read()))
-        file_name = "camera_image"
+if uploaded:
+    image = Image.open(io.BytesIO(uploaded.read()))
+    file_name = uploaded.name
 
 # ================= PROCESS =================
 if image:
@@ -132,10 +115,9 @@ if image:
     st.subheader("OCR Text")
     st.text_area("Extracted", full_text, height=200)
 
-    # ✅ AUTO + MANUAL NAME
     st.subheader("Person Details")
     person_name = st.text_input(
-        "Person Name (auto detected, you can edit)",
+        "Person Name (auto detected, editable)",
         value=name,
         key=f"name_{st.session_state.uploader_key}"
     )
