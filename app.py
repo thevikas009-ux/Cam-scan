@@ -8,9 +8,9 @@ from datetime import datetime
 import io
 import re
 
-# ================= SESSION INIT (RESET SUPPORT) =================
-if "reset" not in st.session_state:
-    st.session_state.reset = False
+# ================= SESSION STATE INIT =================
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
 
 # ================= PAGE CONFIG =================
 st.set_page_config(
@@ -71,7 +71,7 @@ def extract_data(text):
     lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 2]
 
     phone = ", ".join(set(re.findall(r"\+?\d[\d\s\-]{8,15}", text)))
-    whatsapp = ", ".join(set(re.findall(r"\+?\d[\d\s\-]{8,15}", text)))
+    whatsapp = phone
     email = ", ".join(set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)))
     website = ", ".join(set(re.findall(r"(?:www\.|https?://)[^\s]+", text)))
 
@@ -118,7 +118,8 @@ sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
 option = st.radio(
     "Choose image source",
     ["Upload Image", "Open Camera"],
-    horizontal=True
+    horizontal=True,
+    key=f"source_{st.session_state.uploader_key}"
 )
 
 image = None
@@ -128,20 +129,20 @@ file_name = ""
 if option == "Upload Image":
     uploaded = st.file_uploader(
         "Upload image (max 3MB)",
-        type=["jpg", "jpeg", "png"]
+        type=["jpg", "jpeg", "png"],
+        key=f"upload_{st.session_state.uploader_key}"
     )
     if uploaded:
-        if uploaded.size > 3 * 1024 * 1024:
-            st.error("❌ Image too large. Please upload under 3MB.")
-            st.stop()
-
         image = Image.open(io.BytesIO(uploaded.read()))
         image = resize_image(image)
         file_name = uploaded.name
 
 # ================= CAMERA =================
 elif option == "Open Camera":
-    cam = st.camera_input("Click to capture")
+    cam = st.camera_input(
+        "Click to capture",
+        key=f"camera_{st.session_state.uploader_key}"
+    )
     if cam:
         image = Image.open(io.BytesIO(cam.read()))
         image = resize_image(image)
@@ -151,26 +152,30 @@ elif option == "Open Camera":
 if image:
     st.image(image, use_column_width=True)
 
-    with st.spinner("🔍 Reading visiting card..."):
-        full_text = run_ocr(image)
+    full_text = run_ocr(image)
 
     st.subheader("Extracted Text")
-    st.text_area("OCR Output", full_text, height=220)
+    st.text_area(
+        "OCR Output",
+        full_text,
+        height=220,
+        key=f"ocr_{st.session_state.uploader_key}"
+    )
 
     company, phone, whatsapp, email, name, designation, address, website = extract_data(full_text)
 
-    st.text_input("WhatsApp Number", whatsapp)
+    st.text_input(
+        "Phone Number",
+        whatsapp,
+        key=f"whatsapp_{st.session_state.uploader_key}"
+    )
 
-    # ================= CHECKBOX SECTION =================
+    # ================= CHECKBOX =================
     st.subheader("Inspection Options")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        seal_integrity = st.checkbox("Seal Integrity")
-    with col2:
-        robotics = st.checkbox("Robotics")
-    with col3:
-        cap_clouser = st.checkbox("Cap and Clouser")
+    seal_integrity = st.checkbox("Seal Integrity", key=f"seal_{st.session_state.uploader_key}")
+    robotics = st.checkbox("Robotics", key=f"robotics_{st.session_state.uploader_key}")
+    cap_clouser = st.checkbox("Cap and Clouser", key=f"cap_{st.session_state.uploader_key}")
 
     selected_options = []
     if seal_integrity:
@@ -182,20 +187,17 @@ if image:
 
     selected_options_str = ", ".join(selected_options)
 
-    st.subheader("Remarks")
-    remarks = st.text_area("Enter remarks", height=120)
+    remarks = st.text_area(
+        "Enter remarks",
+        height=120,
+        key=f"remarks_{st.session_state.uploader_key}"
+    )
 
     # ================= SAVE + RESET =================
-    col_save, col_reset = st.columns(2)
+    col1, col2 = st.columns(2)
 
-    with col_save:
-        save_clicked = st.button("✅ Save to Google Sheet")
-
-    with col_reset:
-        reset_clicked = st.button("🔄 Reset Page")
-
-    if save_clicked:
-        try:
+    with col1:
+        if st.button("✅ Save to Google Sheet"):
             sheet.append_row([
                 full_text,
                 file_name,
@@ -214,9 +216,7 @@ if image:
             ])
             st.success("🎉 Data saved successfully")
 
-        except Exception as e:
-            st.error(f"❌ Failed to save: {e}")
-
-    if reset_clicked:
-        st.session_state.clear()
-        st.rerun()
+    with col2:
+        if st.button("🔄 Reset Page"):
+            st.session_state.uploader_key += 1
+            st.rerun()
