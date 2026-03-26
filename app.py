@@ -1,236 +1,128 @@
 import streamlit as st
 import easyocr
 import numpy as np
-from PIL import Image, ExifTags
+from PIL import Image
 import gspread
 from google.oauth2 import service_account
 from datetime import datetime
 import io
-import re
-import time
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
-# ================= HIDE TRACEBACK =================
-st.set_option("client.showErrorDetails", False)
+# Page Setup
+st.set_page_config(page_title="OCR App", layout="centered")
+st.title("📸 Visiting Card OCR")
 
-# ================= SESSION STATE =================
-if "uploader_key" not in st.session_state:
-    st.session_state.uploader_key = 0
-
-# ================= PAGE CONFIG =================
-st.set_page_config(page_title="Electronics Devices Worldwide", layout="centered")
-
-# ================= HEADER =================
-def header():
-    col1, col2 = st.columns([2, 6])
-    with col1:
-        st.image("logo.png", width=200)
-    with col2:
-        st.markdown("""
-        <h2 style="margin-bottom:0;">ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h2>
-        <p style="color:gray;margin-top:4px;">Visiting Card OCR • Mobile Safe • Free AI</p>
-        """, unsafe_allow_html=True)
-    st.divider()
-
-header()
-st.title("📸 Visiting Card OCR to Google Sheet")
-
-# ================= IMAGE FIX =================
-def fix_image_orientation(image):
-    try:
-        for orientation in ExifTags.TAGS.keys():
-            if ExifTags.TAGS[orientation]=='Orientation':
-                break
-        exif = dict(image._getexif().items())
-        if exif.get(orientation) == 3:
-            image = image.rotate(180, expand=True)
-        elif exif.get(orientation) == 6:
-            image = image.rotate(270, expand=True)
-        elif exif.get(orientation) == 8:
-            image = image.rotate(90, expand=True)
-    except:
-        pass
-    return image
-
-def resize_image(image, max_width=1000):
-    if image.width > max_width:
-        ratio = max_width / image.width
-        new_height = int(image.height * ratio)
-        image = image.resize((max_width, new_height))
-    return image
-
-# ================= OCR =================
+# ================= OCR LOAD =================
 @st.cache_resource
 def load_reader():
-    try:
-        return easyocr.Reader(["en"], gpu=False)
-    except Exception:
-        return None
+    return easyocr.Reader(["en"], gpu=False)
 
 reader = load_reader()
 
 def run_ocr(image):
-    if reader is None:
-        return []
-    try:
-        img = np.array(image.convert("RGB"))
-        result = reader.readtext(img, detail=0, paragraph=False)
-        return [r.strip() for r in result if len(r.strip()) > 2]
-    except Exception:
-        return []
+    img = np.array(image.convert("RGB"))
+    results = reader.readtext(img, detail=0)
+    return "\n".join(results)
 
-# ================= SMART EXTRACTION =================
-def extract_data(lines):
-    full_text = "\n".join(lines)
-
-    phone_matches = re.findall(r"\+?\d[\d\s\-]{8,15}", full_text)
-    phone = phone_matches[0] if phone_matches else ""
-    whatsapp = phone
-
-    email = ", ".join(set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", full_text)))
-    website = ", ".join(set(re.findall(r"(?:www\.|https?://)[^\s]+", full_text)))
-
-    name = ""
-    if phone:
-        for i, line in enumerate(lines):
-            if phone in line and i > 0:
-                possible_name = lines[i - 1]
-                if not re.search(r"\d|@|www|http", possible_name.lower()):
-                    name = possible_name
-                break
-
-    company = ""
-    designation = ""
-    address_lines = []
-
-    for line in lines:
-        low = line.lower()
-        if not company and re.search(r"\b(pvt|private|ltd|limited|company|corp|industries)\b", low):
-            company = line
-        if not designation and re.search(r"\b(manager|director|engineer|owner|ceo|founder|executive)\b", low):
-            designation = line
-        if any(x in low for x in ["road", "street", "sector", "block", "india", "pin", "plot", "building"]):
-            address_lines.append(line)
-
-    address = ", ".join(address_lines)
-
-    return full_text, company, name, phone, whatsapp, email, designation, address, website
-
-# ================= GOOGLE SHEET =================
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-try:
-    creds = service_account.Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"], scopes=SCOPES
+# ================= GOOGLE AUTH =================
+def get_creds():
+    return service_account.Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
     )
-    client = gspread.authorize(creds)
-    sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
-except Exception:
-    sheet = None
 
-# ================= IMAGE UPLOAD ONLY =================
-uploaded = st.file_uploader(
-    "Upload visiting card image",
-    type=["jpg", "jpeg", "png"],
-    key=f"upload_{st.session_state.uploader_key}"
-)
+# ================= DRIVE UPLOAD =================
+def upload_to_drive(image, file_name):
+    try:
+        creds = get_creds()
+        service = build("drive", "v3", credentials=creds)
 
-image = None
-file_name = ""
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG")
+        buffer.seek(0)
+
+        file_metadata = {
+            "name": file_name,
+            "parents": ["1EVIcT6ewpzYJ_yD2lTahH2Ld-neJj2Ce"] # Aapka Folder ID
+        }
+
+        media = MediaIoBaseUpload(buffer, mimetype="image/jpeg", resumable=True)
+
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id, webViewLink"
+        ).execute()
+
+        return file.get("webViewLink")
+
+    except Exception as e:
+        # Screen par error dikhayega agar upload fail hua
+        st.error(f"❌ Drive Error: {e}")
+        return "No Link"
+
+# ================= UI & LOGIC =================
+uploaded = st.file_uploader("Upload visiting card", type=["jpg","png","jpeg"])
 
 if uploaded:
-    try:
-        image = Image.open(io.BytesIO(uploaded.read()))
-        image = fix_image_orientation(image)
-        image = resize_image(image)
-        file_name = uploaded.name
-    except Exception:
-        st.warning("⚠️ Image open nahi ho paayi. Please try another image.")
+    image = Image.open(uploaded)
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
-# ================= PROCESS =================
-if image:
-    st.image(image, use_column_width=True)
+    with st.spinner("Extracting text..."):
+        full_text = run_ocr(image)
+    
+    st.subheader("Extracted Details")
+    ocr_result = st.text_area("OCR Text", full_text, height=150)
 
-    lines = run_ocr(image)
-    if not lines:
-        st.warning("⚠️ Text detect nahi hua. Clear image upload karein.")
-        st.stop()
-
-    full_text, company, name, phone, whatsapp, email, designation, address, website = extract_data(lines)
-
-    st.subheader("OCR Text")
-    st.text_area("Extracted", full_text, height=200)
-
-    st.subheader("Person Details")
-    person_name = st.text_input(
-        "Person Name (auto detected, editable)",
-        value=name,
-        key=f"name_{st.session_state.uploader_key}"
-    )
-
-    st.text_input("Phone", phone)
-    st.text_input("WhatsApp", whatsapp)
-    st.text_input("Email", email)
-
-    # ================= INSPECTION CHECKBOXES =================
-    st.subheader("Inspection Options")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        seal_integrity = st.checkbox("Seal Integrity")
-    with col2:
-        robotics = st.checkbox("Robotics")
-    with col3:
-        cap_clouser = st.checkbox("Cap and Clouser")
-
-    selected_options = []
-    if seal_integrity:
-        selected_options.append("Seal Integrity")
-    if robotics:
-        selected_options.append("Robotics")
-    if cap_clouser:
-        selected_options.append("Cap and Clouser")
-
-    selected_options_str = ", ".join(selected_options)
-
-    remarks = st.text_area("Remarks")
-
+    # Manual Inputs
     col1, col2 = st.columns(2)
-
     with col1:
-        if st.button("✅ Save"):
-            if sheet is None:
-                st.info("ℹ️ Sheet connection fail. Data save nahi ho paaya.")
-            else:
-                saved = False
-                attempts = 0
-                max_attempts = 3
-                while not saved and attempts < max_attempts:
-                    try:
-                        sheet.append_row([
-                            full_text,
-                            file_name,
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            company,
-                            person_name,
-                            phone,
-                            whatsapp,
-                            email,
-                            designation,
-                            address,
-                            website,
-                            selected_options_str,
-                            remarks
-                        ])
-                        saved = True
-                        st.success("✅ Data saved successfully")
-                    except Exception:
-                        attempts += 1
-                        time.sleep(2)
-                if not saved:
-                    st.info("ℹ️ Data save nahi ho paaya. Internet ya Sheet check karein.")
-
+        name = st.text_input("Name")
     with col2:
-        if st.button("🔄 Reset"):
-            try:
-                st.session_state.uploader_key += 1
-                st.rerun()
-            except Exception:
-                pass
+        remarks = st.text_input("Remarks")
+
+    # --- AGAR AAPKO 4 OPTIONS CHAHIYE THE ---
+    business_type = st.radio("Business Type", ["Retailer", "Wholesaler", "Distributor", "Manufacturer"], horizontal=True)
+
+    if st.button("🚀 Save to Google Sheets"):
+        if not name:
+            st.warning("Pehle Name bhariye!")
+        else:
+            with st.spinner("Saving data..."):
+                # 1. Upload Image to Drive
+                file_name = f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+                drive_link = upload_to_drive(image, file_name)
+
+                # 2. Connect to Sheet
+                try:
+                    creds = get_creds()
+                    client = gspread.authorize(creds)
+                    sheet = client.open_by_key(st.secrets["sheet_id"]).worksheet("Sheet1")
+
+                    # Clickable Link Formula
+                    clickable_link = f'=HYPERLINK("{drive_link}", "View Image")'
+
+                    # 3. Prepare Data Row (Total 7 Columns)
+                    new_row = [
+                        full_text,      # Col A
+                        file_name,      # Col B
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"), # Col C
+                        name,           # Col D
+                        business_type,  # Col E (Naya Option)
+                        remarks,        # Col F
+                        clickable_link  # Col G
+                    ]
+
+                    # 4. Append to Sheet (Fixes Shifting)
+                    sheet.append_row(new_row, value_input_option="USER_ENTERED")
+
+                    st.success("✅ Success! Data added to Sheet and Image saved to Drive.")
+                    st.write(f"🔗 Drive Link: {drive_link}")
+                    st.balloons()
+                    
+                except Exception as e:
+                    st.error(f"❌ Sheet Error: {e}")
