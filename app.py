@@ -10,10 +10,12 @@ import pytesseract
 import time
 import requests
 import base64
+import os
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="EDW Business Card Scanner", layout="centered")
 
+# --- Helper Functions ---
 def fix_orientation(image):
     try:
         for orientation in ExifTags.TAGS.keys():
@@ -27,29 +29,50 @@ def fix_orientation(image):
 
 def upload_to_imgbb(image):
     try:
+        # Check if key exists in secrets
+        if "imgbb_api_key" not in st.secrets:
+            st.error("Secrets mein 'imgbb_api_key' nahi mila!")
+            return "Key Missing"
+            
         buf = io.BytesIO()
-        image.save(buf, format="JPEG", quality=60)
-        img_str = base64.b64encode(buf.getvalue())
+        image.save(buf, format="JPEG", quality=50)
+        # Proper base64 encoding for ImgBB API
+        img_str = base64.b64encode(buf.getvalue()).decode('utf-8')
         
         api_key = st.secrets["imgbb_api_key"]
         url = "https://api.imgbb.com/1/upload"
-        payload = {
+        
+        # Payload structure for ImgBB
+        data = {
             "key": api_key,
             "image": img_str,
         }
-        res = requests.post(url, payload)
-        return res.json()['data']['url']
+        
+        # Making the POST request
+        response = requests.post(url, data=data)
+        res_json = response.json()
+        
+        # Handling response
+        if response.status_code == 200:
+            return res_json['data']['url'] # Direct image link
+        else:
+            error_msg = res_json.get('error', {}).get('message', 'Unknown Error')
+            st.error(f"ImgBB Upload Failed: {error_msg}")
+            return f"Error: {error_msg}"
+            
     except Exception as e:
-        return "Link Error"
+        st.error(f"Upload System Error: {e}")
+        return "System Error"
 
 def extract_details(image):
     try:
+        # Pytesseract light-weight scan
         full_text = pytesseract.image_to_string(image)
         lines = [line.strip() for line in full_text.split('\n') if line.strip()]
         email = re.findall(r"\S+@\S+", full_text)
         phone = re.findall(r"\+?\d[\d\s\-]{8,15}", full_text)
         
-        # Address logic
+        # Address Keywords
         addr_keywords = ["road", "street", "floor", "building", "plot", "area", "nagar", "city", "sector", "industrial", "phase"]
         addr_list = [line for line in lines if any(w in line.lower() for w in addr_keywords) or re.search(r"\b\d{6}\b", line)]
         
@@ -64,38 +87,56 @@ def extract_details(image):
     except: return None
 
 # ================= UI INTERFACE =================
-st.markdown("<h2 style='text-align:center; color:#1E3A8A;'>ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h2>", unsafe_allow_html=True)
+# --- Header with Logo & Title ---
+col_logo, col_title = st.columns([1, 4])
+
+# Logo Loading Logic
+with col_logo:
+    logo_path = "logo.png" # Make sure to upload logo.png to codespace
+    if os.path.exists(logo_path):
+        logo_img = Image.open(logo_path)
+        st.image(logo_img, width=100)
+    else:
+        st.warning("logo.png not found")
+
+with col_title:
+    st.markdown("<h2 style='text-align:left; color:#1E3A8A; margin-top:10px;'>ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h2>", unsafe_allow_html=True)
+
 st.divider()
 
+# Session state reset fix
 if "ocr_data" not in st.session_state: 
     st.session_state.ocr_data = None
 
-uploaded = st.file_uploader("📸 Upload Visiting Card", type=["jpg","png","jpeg"])
+uploaded = st.file_uploader("📸 Upload Visiting Card Image", type=["jpg","png","jpeg"])
 
 # AUTOMATIC SCAN ON UPLOAD
 if uploaded and st.session_state.ocr_data is None:
     img = Image.open(uploaded)
     img = fix_orientation(img)
-    with st.spinner("Processing Card..."):
+    with st.spinner("AI scanning card... Please wait"):
         st.session_state.ocr_data = extract_details(img)
         st.rerun()
 
 if uploaded and st.session_state.ocr_data:
     img = Image.open(uploaded)
     img = fix_orientation(img)
-    st.image(img, width=350)
+    st.image(img, width=350, caption="Uploaded Card")
     
     d = st.session_state.ocr_data
     with st.form("entry_form"):
         st.subheader("Verify Details")
-        v_full = st.text_area("Full OCR Text", value=d["full"], height=100)
+        v_full = st.text_area("Full OCR Text (A)", value=d["full"], height=100)
         
-        c1, c2 = st.columns(2)
-        v_name = c1.text_input("Name", value=d["name"])
-        v_comp = c2.text_input("Company", value=d["comp"])
-        v_phone = c1.text_input("Phone", value=d["phone"])
-        v_email = c2.text_input("Email", value=d["email"])
-        v_addr = st.text_area("Address", value=d["addr"])
+        col1, col2 = st.columns(2)
+        with col1:
+            v_name = st.text_input("Person Name", value=d["name"])
+            v_phone = st.text_input("Phone Number", value=d["phone"])
+            v_email = st.text_input("Email ID", value=d["email"])
+        with col2:
+            v_comp = st.text_input("Company Name", value=d["comp"])
+            st.text_input("Website (if any)", value="") # Placeholder for column J
+            v_addr = st.text_area("Office Address", value=d["addr"])
 
         st.write("---")
         st.subheader("Inspection Options")
@@ -107,14 +148,14 @@ if uploaded and st.session_state.ocr_data:
         
         v_rem = st.text_area("Remarks / Note")
         
-        if st.form_submit_button("🚀 Final Save"):
+        if st.form_submit_button("🚀 Final Confirm & Save EVERYTHING"):
             try:
-                with st.spinner("Uploading & Saving..."):
-                    # 1. Get Image Link via ImgBB
+                with st.spinner("Processing... Uploading Image & Saving Data."):
+                    # 1. Get Image Link via ImgBB (Bypassing Drive Quota)
                     img_url = upload_to_imgbb(img)
                     
-                    # 2. Setup Google Sheets
-                    # Note: We use the secrets directly from the Streamlit Cloud Settings
+                    # 2. Setup Google Sheets (Column A to M mapping)
+                    # Mapping secrets from Streamlit Cloud Settings
                     creds_dict = {
                         "type": st.secrets["gcp_service_account"]["type"],
                         "project_id": st.secrets["gcp_service_account"]["project_id"],
@@ -135,20 +176,22 @@ if uploaded and st.session_state.ocr_data:
                     client = gspread.authorize(creds)
                     sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
                     
-                    selected_opts = [opt for opt, val in zip(["Seal", "Robotics", "Cap", "Induction"], [o1, o2, o3, o4]) if val]
+                    selected_opts = [opt for opt, val in zip(["Seal Integrity", "Robotics", "Cap and Clouser", "Induction Capsealing"], [o1, o2, o3, o4]) if val]
+                    options_str = ", ".join(selected_opts) if selected_opts else "None"
                     
-                    # Row Mapping (Column A to M)
+                    # Exact Mapping Column A to M
                     row = [
                         v_full, f"{v_name}.jpg", datetime.now().strftime("%Y-%m-%d %H:%M"), 
                         v_comp, v_name, v_phone, v_email, "", v_addr, "", 
-                        ", ".join(selected_opts), v_rem, f'=HYPERLINK("{img_url}", "View Card Photo")'
+                        options_str, v_rem, f'=HYPERLINK("{img_url}", "View Card Photo")'
                     ]
                     
                     sheet.append_row(row, value_input_option="USER_ENTERED")
                     
-                    st.success("✅ Saved to Google Sheet!")
+                    st.success("✅ Saved Successfully! Link added to Sheet.")
+                    st.balloons()
                     st.session_state.ocr_data = None 
-                    time.sleep(1)
+                    time.sleep(2)
                     st.rerun()
             except Exception as e:
                 st.error(f"Save Error: {e}")
