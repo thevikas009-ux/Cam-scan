@@ -56,11 +56,11 @@ def extract_details(image):
         }
     except: return None
 
-# ================= SESSION STATE INITIALIZATION =================
+# ================= SESSION STATE =================
 if "ocr_data" not in st.session_state:
     st.session_state.ocr_data = None
 if "uploader_key" not in st.session_state:
-    st.session_state.uploader_key = 0  # Isse file uploader reset hoga
+    st.session_state.uploader_key = 0 
 
 # ================= UI INTERFACE =================
 col_logo, col_title = st.columns([1, 4])
@@ -71,7 +71,7 @@ with col_title:
 
 st.divider()
 
-# Uploader with Dynamic Key for Auto-Reset
+# Uploader with Reset Key
 uploaded = st.file_uploader("📸 Upload Visiting Card Image", type=["jpg","png","jpeg"], key=f"uploader_{st.session_state.uploader_key}")
 
 # AUTO SCAN
@@ -88,7 +88,7 @@ if uploaded and st.session_state.ocr_data:
     st.image(img, width=350, caption="Uploaded Card")
     
     d = st.session_state.ocr_data
-    with st.form("entry_form", clear_on_submit=True): # clear_on_submit added
+    with st.form("entry_form", clear_on_submit=True):
         st.subheader("Verify Details")
         v_full = st.text_area("Full OCR Text", value=d["full"], height=100)
         
@@ -131,21 +131,21 @@ if uploaded and st.session_state.ocr_data:
                     client = gspread.authorize(creds)
                     sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
                     
-                    opts = [opt for opt, val in zip(["Seal", "Robotics", "Cap", "Induction"], [o1, o2, o3, o4]) if val]
+                    # --- FIX: Yahan poore naam likhe hain taaki sheet mein sahi jaye ---
+                    names_list = ["Seal Integrity", "Robotics", "Cap and Clouser", "Induction Capsealing"]
+                    bool_list = [o1, o2, o3, o4]
+                    selected_opts = [name for name, val in zip(names_list, bool_list) if val]
                     
                     row = [v_full, f"{v_name}.jpg", datetime.now().strftime("%Y-%m-%d %H:%M"), 
                            v_comp, v_name, v_phone, v_email, "", v_addr, v_web, 
-                           ", ".join(opts), v_rem, f'=HYPERLINK("{img_url}", "View Card Photo")']
+                           ", ".join(selected_opts), v_rem, f'=HYPERLINK("{img_url}", "View Card Photo")']
                     
                     sheet.append_row(row, value_input_option="USER_ENTERED")
                     
-                    # --- SUCCESS AND RESET LOGIC ---
                     st.success("✅ DATA SAVED SUCCESSFULLY!")
                     st.balloons()
                     
-                    # 1. Clear OCR Data
                     st.session_state.ocr_data = None 
-                    # 2. Increment key to force file uploader to clear
                     st.session_state.uploader_key += 1 
                     
                     time.sleep(2)
