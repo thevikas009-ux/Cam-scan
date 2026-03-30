@@ -41,89 +41,97 @@ def extract_details(image):
         }
     except: return None
 
-# ================= UI =================
+# ================= INTERFACE =================
 st.markdown("<h2 style='text-align:center; color:#1E3A8A;'>ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h2>", unsafe_allow_html=True)
 st.divider()
 
-if "ocr_data" not in st.session_state: st.session_state.ocr_data = None
+if "ocr_data" not in st.session_state: 
+    st.session_state.ocr_data = None
 
 uploaded = st.file_uploader("📸 Upload Visiting Card", type=["jpg","png","jpeg"])
 
-if uploaded:
+# AUTOMATIC SCAN LOGIC
+if uploaded and st.session_state.ocr_data is None:
+    img = Image.open(uploaded)
+    img = fix_orientation(img)
+    with st.spinner("Scanning Card... Please wait"):
+        st.session_state.ocr_data = extract_details(img)
+        st.rerun()
+
+if uploaded and st.session_state.ocr_data:
     img = Image.open(uploaded)
     img = fix_orientation(img)
     st.image(img, width=350)
+    
+    d = st.session_state.ocr_data
+    with st.form("entry_form"):
+        st.subheader("Verify Details")
+        v_full = st.text_area("Full OCR Text", value=d["full"], height=100)
+        
+        c1, c2 = st.columns(2)
+        v_name = c1.text_input("Name", value=d["name"])
+        v_comp = c2.text_input("Company", value=d["comp"])
+        v_phone = c1.text_input("Phone", value=d["phone"])
+        v_email = c2.text_input("Email", value=d["email"])
+        v_addr = st.text_area("Address", value=d["addr"])
 
-    if st.button("🔍 Step 1: Scan Card Details"):
-        with st.spinner("Scanning..."):
-            st.session_state.ocr_data = extract_details(img)
-            st.rerun()
+        st.write("---")
+        st.subheader("Inspection Options")
+        col_a, col_b = st.columns(2)
+        o1 = col_a.checkbox("Seal Integrity")
+        o2 = col_a.checkbox("Robotics")
+        o3 = col_b.checkbox("Cap and Clouser")
+        o4 = col_b.checkbox("Induction Capsealing")
+        
+        v_rem = st.text_area("Remarks / Note")
+        
+        if st.form_submit_button("🚀 Final Save"):
+            try:
+                with st.spinner("Saving..."):
+                    creds = service_account.Credentials.from_service_account_info(
+                        st.secrets["gcp_service_account"], 
+                        scopes=["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/spreadsheets"]
+                    )
+                    
+                    # 1. DRIVE UPLOAD (Fixed for 403 Quota)
+                    drive = build("drive", "v3", credentials=creds)
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=40) # Quality low to bypass quota limits
+                    buf.seek(0)
+                    
+                    file_metadata = {
+                        "name": f"{v_name}_{datetime.now().strftime('%H%M%S')}.jpg",
+                        "parents": ["1egDc73Vfv8rc9-ppCuN4JWFNi1WlrK0x"]
+                    }
+                    
+                    # Simple upload is better for quota issues than Resumable
+                    media = MediaIoBaseUpload(buf, mimetype="image/jpeg", resumable=False)
+                    
+                    file = drive.files().create(
+                        body=file_metadata, 
+                        media_body=media, 
+                        fields="id, webViewLink",
+                        supportsAllDrives=True
+                    ).execute()
+                    link = file.get("webViewLink")
 
-    if st.session_state.ocr_data:
-        d = st.session_state.ocr_data
-        with st.form("entry_form"):
-            st.subheader("📝 Step 2: Verify & Edit")
-            v_full = st.text_area("Full OCR Text", value=d["full"], height=100)
-            
-            c1, c2 = st.columns(2)
-            v_name = c1.text_input("Name", value=d["name"])
-            v_comp = c2.text_input("Company", value=d["comp"])
-            v_phone = c1.text_input("Phone", value=d["phone"])
-            v_email = c2.text_input("Email", value=d["email"])
-            v_addr = st.text_area("Address", value=d["addr"])
-
-            # --- RESTORED CHECKBOXES ---
-            st.write("---")
-            st.subheader("⚙️ Step 3: Inspection Options")
-            col_a, col_b = st.columns(2)
-            o1 = col_a.checkbox("Seal Integrity")
-            o2 = col_a.checkbox("Robotics")
-            o3 = col_b.checkbox("Cap and Clouser")
-            o4 = col_b.checkbox("Induction Capsealing")
-            
-            v_rem = st.text_area("Remarks / Note")
-            
-            if st.form_submit_button("🚀 Final Save Everything"):
-                try:
-                    with st.spinner("Processing Data..."):
-                        creds = service_account.Credentials.from_service_account_info(
-                            st.secrets["gcp_service_account"], 
-                            scopes=["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/spreadsheets"]
-                        )
-                        
-                        # 1. DRIVE UPLOAD
-                        drive = build("drive", "v3", credentials=creds)
-                        buf = io.BytesIO()
-                        img.save(buf, format="JPEG", quality=50) 
-                        buf.seek(0)
-                        
-                        file_metadata = {
-                            "name": f"{v_name}_{datetime.now().strftime('%H%M%S')}.jpg",
-                            "parents": ["1egDc73Vfv8rc9-ppCuN4JWFNi1WlrK0x"]
-                        }
-                        media = MediaIoBaseUpload(buf, mimetype="image/jpeg")
-                        file = drive.files().create(body=file_metadata, media_body=media, fields="webViewLink", supportsAllDrives=True).execute()
-                        link = file.get("webViewLink")
-
-                        # 2. SHEET SAVE
-                        client = gspread.authorize(creds)
-                        sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
-                        
-                        # Checkbox selection logic
-                        selected_opts = [opt for opt, val in zip(["Seal", "Robotics", "Cap", "Induction"], [o1, o2, o3, o4]) if val]
-                        options_str = ", ".join(selected_opts) if selected_opts else "None"
-                        
-                        row = [
-                            v_full, f"{v_name}.jpg", datetime.now().strftime("%Y-%m-%d %H:%M"), 
-                            v_comp, v_name, v_phone, v_email, "", v_addr, "", 
-                            options_str, v_rem, f'=HYPERLINK("{link}", "View Card")'
-                        ]
-                        
-                        sheet.append_row(row, value_input_option="USER_ENTERED")
-                        
-                        st.success("✅ Data & Image Saved Successfully!")
-                        st.session_state.ocr_data = None
-                        time.sleep(1)
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Save Error: {e}")
+                    # 2. SHEET SAVE
+                    client = gspread.authorize(creds)
+                    sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
+                    
+                    selected_opts = [opt for opt, val in zip(["Seal", "Robotics", "Cap", "Induction"], [o1, o2, o3, o4]) if val]
+                    row = [
+                        v_full, f"{v_name}.jpg", datetime.now().strftime("%Y-%m-%d %H:%M"), 
+                        v_comp, v_name, v_phone, v_email, "", v_addr, "", 
+                        ", ".join(selected_opts), v_rem, f'=HYPERLINK("{link}", "View Card")'
+                    ]
+                    
+                    sheet.append_row(row, value_input_option="USER_ENTERED")
+                    
+                    st.success("✅ Saved Successfully!")
+                    st.session_state.ocr_data = None # Clear data for next scan
+                    time.sleep(1)
+                    st.rerun()
+            except Exception as e:
+                # Agar Drive fail bhi ho, toh kam se kam sheet mein entry ho jaye
+                st.error(f"Save Error: {e}")
