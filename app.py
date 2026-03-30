@@ -8,11 +8,11 @@ import io
 import re
 import pytesseract
 import time
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+import requests
+import base64
 
 # ================= PAGE CONFIG =================
-st.set_page_config(page_title="Electronics Devices Worldwide", layout="centered")
+st.set_page_config(page_title="EDW Business Card Scanner", layout="centered")
 
 def fix_orientation(image):
     try:
@@ -25,23 +25,45 @@ def fix_orientation(image):
     except: pass
     return image
 
+def upload_to_imgbb(image):
+    try:
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=60)
+        img_str = base64.b64encode(buf.getvalue())
+        
+        api_key = st.secrets["imgbb_api_key"]
+        url = "https://api.imgbb.com/1/upload"
+        payload = {
+            "key": api_key,
+            "image": img_str,
+        }
+        res = requests.post(url, payload)
+        return res.json()['data']['url']
+    except Exception as e:
+        return "Link Error"
+
 def extract_details(image):
     try:
         full_text = pytesseract.image_to_string(image)
         lines = [line.strip() for line in full_text.split('\n') if line.strip()]
         email = re.findall(r"\S+@\S+", full_text)
         phone = re.findall(r"\+?\d[\d\s\-]{8,15}", full_text)
+        
+        # Address logic
         addr_keywords = ["road", "street", "floor", "building", "plot", "area", "nagar", "city", "sector", "industrial", "phase"]
         addr_list = [line for line in lines if any(w in line.lower() for w in addr_keywords) or re.search(r"\b\d{6}\b", line)]
+        
         return {
-            "full": full_text, "name": lines[0] if lines else "Unknown",
-            "phone": phone[0] if phone else "", "email": email[0] if email else "",
+            "full": full_text, 
+            "name": lines[0] if lines else "Unknown",
+            "phone": phone[0] if phone else "", 
+            "email": email[0] if email else "",
             "addr": ", ".join(addr_list),
             "comp": next((l for l in lines if "pvt" in l.lower() or "ltd" in l.lower()), "")
         }
     except: return None
 
-# ================= INTERFACE =================
+# ================= UI INTERFACE =================
 st.markdown("<h2 style='text-align:center; color:#1E3A8A;'>ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h2>", unsafe_allow_html=True)
 st.divider()
 
@@ -50,11 +72,11 @@ if "ocr_data" not in st.session_state:
 
 uploaded = st.file_uploader("📸 Upload Visiting Card", type=["jpg","png","jpeg"])
 
-# AUTOMATIC SCAN LOGIC
+# AUTOMATIC SCAN ON UPLOAD
 if uploaded and st.session_state.ocr_data is None:
     img = Image.open(uploaded)
     img = fix_orientation(img)
-    with st.spinner("Scanning Card... Please wait"):
+    with st.spinner("Processing Card..."):
         st.session_state.ocr_data = extract_details(img)
         st.rerun()
 
@@ -87,51 +109,46 @@ if uploaded and st.session_state.ocr_data:
         
         if st.form_submit_button("🚀 Final Save"):
             try:
-                with st.spinner("Saving..."):
-                    creds = service_account.Credentials.from_service_account_info(
-                        st.secrets["gcp_service_account"], 
-                        scopes=["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/spreadsheets"]
-                    )
+                with st.spinner("Uploading & Saving..."):
+                    # 1. Get Image Link via ImgBB
+                    img_url = upload_to_imgbb(img)
                     
-                    # 1. DRIVE UPLOAD (Fixed for 403 Quota)
-                    drive = build("drive", "v3", credentials=creds)
-                    buf = io.BytesIO()
-                    img.save(buf, format="JPEG", quality=40) # Quality low to bypass quota limits
-                    buf.seek(0)
-                    
-                    file_metadata = {
-                        "name": f"{v_name}_{datetime.now().strftime('%H%M%S')}.jpg",
-                        "parents": ["1egDc73Vfv8rc9-ppCuN4JWFNi1WlrK0x"]
+                    # 2. Setup Google Sheets
+                    # Note: We use the secrets directly from the Streamlit Cloud Settings
+                    creds_dict = {
+                        "type": st.secrets["gcp_service_account"]["type"],
+                        "project_id": st.secrets["gcp_service_account"]["project_id"],
+                        "private_key_id": st.secrets["gcp_service_account"]["private_key_id"],
+                        "private_key": st.secrets["gcp_service_account"]["private_key"],
+                        "client_email": st.secrets["gcp_service_account"]["client_email"],
+                        "client_id": st.secrets["gcp_service_account"]["client_id"],
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": st.secrets["gcp_service_account"]["token_uri"],
+                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                        "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{st.secrets['gcp_service_account']['client_email']}"
                     }
                     
-                    # Simple upload is better for quota issues than Resumable
-                    media = MediaIoBaseUpload(buf, mimetype="image/jpeg", resumable=False)
-                    
-                    file = drive.files().create(
-                        body=file_metadata, 
-                        media_body=media, 
-                        fields="id, webViewLink",
-                        supportsAllDrives=True
-                    ).execute()
-                    link = file.get("webViewLink")
-
-                    # 2. SHEET SAVE
+                    creds = service_account.Credentials.from_service_account_info(
+                        creds_dict, 
+                        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+                    )
                     client = gspread.authorize(creds)
                     sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
                     
                     selected_opts = [opt for opt, val in zip(["Seal", "Robotics", "Cap", "Induction"], [o1, o2, o3, o4]) if val]
+                    
+                    # Row Mapping (Column A to M)
                     row = [
                         v_full, f"{v_name}.jpg", datetime.now().strftime("%Y-%m-%d %H:%M"), 
                         v_comp, v_name, v_phone, v_email, "", v_addr, "", 
-                        ", ".join(selected_opts), v_rem, f'=HYPERLINK("{link}", "View Card")'
+                        ", ".join(selected_opts), v_rem, f'=HYPERLINK("{img_url}", "View Card Photo")'
                     ]
                     
                     sheet.append_row(row, value_input_option="USER_ENTERED")
                     
-                    st.success("✅ Saved Successfully!")
-                    st.session_state.ocr_data = None # Clear data for next scan
+                    st.success("✅ Saved to Google Sheet!")
+                    st.session_state.ocr_data = None 
                     time.sleep(1)
                     st.rerun()
             except Exception as e:
-                # Agar Drive fail bhi ho, toh kam se kam sheet mein entry ho jaye
                 st.error(f"Save Error: {e}")
