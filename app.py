@@ -29,50 +29,35 @@ def fix_orientation(image):
 
 def upload_to_imgbb(image):
     try:
-        # Check if key exists in secrets
         if "imgbb_api_key" not in st.secrets:
             st.error("Secrets mein 'imgbb_api_key' nahi mila!")
             return "Key Missing"
             
         buf = io.BytesIO()
         image.save(buf, format="JPEG", quality=50)
-        # Proper base64 encoding for ImgBB API
         img_str = base64.b64encode(buf.getvalue()).decode('utf-8')
         
         api_key = st.secrets["imgbb_api_key"]
         url = "https://api.imgbb.com/1/upload"
+        data = {"key": api_key, "image": img_str}
         
-        # Payload structure for ImgBB
-        data = {
-            "key": api_key,
-            "image": img_str,
-        }
-        
-        # Making the POST request
         response = requests.post(url, data=data)
         res_json = response.json()
         
-        # Handling response
         if response.status_code == 200:
-            return res_json['data']['url'] # Direct image link
+            return res_json['data']['url']
         else:
-            error_msg = res_json.get('error', {}).get('message', 'Unknown Error')
-            st.error(f"ImgBB Upload Failed: {error_msg}")
-            return f"Error: {error_msg}"
-            
+            return "Upload Failed"
     except Exception as e:
-        st.error(f"Upload System Error: {e}")
-        return "System Error"
+        return f"Error: {e}"
 
 def extract_details(image):
     try:
-        # Pytesseract light-weight scan
         full_text = pytesseract.image_to_string(image)
         lines = [line.strip() for line in full_text.split('\n') if line.strip()]
         email = re.findall(r"\S+@\S+", full_text)
         phone = re.findall(r"\+?\d[\d\s\-]{8,15}", full_text)
         
-        # Address Keywords
         addr_keywords = ["road", "street", "floor", "building", "plot", "area", "nagar", "city", "sector", "industrial", "phase"]
         addr_list = [line for line in lines if any(w in line.lower() for w in addr_keywords) or re.search(r"\b\d{6}\b", line)]
         
@@ -87,34 +72,30 @@ def extract_details(image):
     except: return None
 
 # ================= UI INTERFACE =================
-# --- Header with Logo & Title ---
 col_logo, col_title = st.columns([1, 4])
 
-# Logo Loading Logic
 with col_logo:
-    logo_path = "logo.png" # Make sure to upload logo.png to codespace
+    logo_path = "logo.png"
     if os.path.exists(logo_path):
-        logo_img = Image.open(logo_path)
-        st.image(logo_img, width=100)
+        st.image(Image.open(logo_path), width=100)
     else:
-        st.warning("logo.png not found")
+        st.warning("Logo missing")
 
 with col_title:
     st.markdown("<h2 style='text-align:left; color:#1E3A8A; margin-top:10px;'>ELECTRONICS DEVICES WORLDWIDE PVT. LTD.</h2>", unsafe_allow_html=True)
 
 st.divider()
 
-# Session state reset fix
 if "ocr_data" not in st.session_state: 
     st.session_state.ocr_data = None
 
 uploaded = st.file_uploader("📸 Upload Visiting Card Image", type=["jpg","png","jpeg"])
 
-# AUTOMATIC SCAN ON UPLOAD
+# AUTO SCAN LOGIC
 if uploaded and st.session_state.ocr_data is None:
     img = Image.open(uploaded)
     img = fix_orientation(img)
-    with st.spinner("AI scanning card... Please wait"):
+    with st.spinner("AI scanning card..."):
         st.session_state.ocr_data = extract_details(img)
         st.rerun()
 
@@ -135,7 +116,7 @@ if uploaded and st.session_state.ocr_data:
             v_email = st.text_input("Email ID", value=d["email"])
         with col2:
             v_comp = st.text_input("Company Name", value=d["comp"])
-            st.text_input("Website (if any)", value="") # Placeholder for column J
+            v_web = st.text_input("Website (if any)", value="")
             v_addr = st.text_area("Office Address", value=d["addr"])
 
         st.write("---")
@@ -148,14 +129,14 @@ if uploaded and st.session_state.ocr_data:
         
         v_rem = st.text_area("Remarks / Note")
         
+        # --- SAVE BUTTON LOGIC ---
         if st.form_submit_button("🚀 Final Confirm & Save EVERYTHING"):
             try:
-                with st.spinner("Processing... Uploading Image & Saving Data."):
-                    # 1. Get Image Link via ImgBB (Bypassing Drive Quota)
+                with st.spinner("Processing... Please wait."):
+                    # 1. ImgBB Upload
                     img_url = upload_to_imgbb(img)
                     
-                    # 2. Setup Google Sheets (Column A to M mapping)
-                    # Mapping secrets from Streamlit Cloud Settings
+                    # 2. Sheets Setup
                     creds_dict = {
                         "type": st.secrets["gcp_service_account"]["type"],
                         "project_id": st.secrets["gcp_service_account"]["project_id"],
@@ -169,29 +150,32 @@ if uploaded and st.session_state.ocr_data:
                         "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{st.secrets['gcp_service_account']['client_email']}"
                     }
                     
-                    creds = service_account.Credentials.from_service_account_info(
-                        creds_dict, 
-                        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-                    )
+                    creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
                     client = gspread.authorize(creds)
                     sheet = client.open_by_key(st.secrets["sheet_id"]).sheet1
                     
-                    selected_opts = [opt for opt, val in zip(["Seal Integrity", "Robotics", "Cap and Clouser", "Induction Capsealing"], [o1, o2, o3, o4]) if val]
-                    options_str = ", ".join(selected_opts) if selected_opts else "None"
+                    opts = [opt for opt, val in zip(["Seal", "Robotics", "Cap", "Induction"], [o1, o2, o3, o4]) if val]
                     
-                    # Exact Mapping Column A to M
                     row = [
                         v_full, f"{v_name}.jpg", datetime.now().strftime("%Y-%m-%d %H:%M"), 
-                        v_comp, v_name, v_phone, v_email, "", v_addr, "", 
-                        options_str, v_rem, f'=HYPERLINK("{img_url}", "View Card Photo")'
+                        v_comp, v_name, v_phone, v_email, "", v_addr, v_web, 
+                        ", ".join(opts), v_rem, f'=HYPERLINK("{img_url}", "View Card Photo")'
                     ]
                     
                     sheet.append_row(row, value_input_option="USER_ENTERED")
                     
-                    st.success("✅ Saved Successfully! Link added to Sheet.")
+                    # --- SUCCESS AND AUTO RESET ---
+                    st.success("✅ DATA SAVED SUCCESSFULLY IN GOOGLE SHEET!")
                     st.balloons()
+                    
+                    # Clear session state
                     st.session_state.ocr_data = None 
-                    time.sleep(2)
+                    
+                    # Wait for 3 seconds so user can see success message
+                    time.sleep(3)
+                    
+                    # Refresh page
                     st.rerun()
+                    
             except Exception as e:
                 st.error(f"Save Error: {e}")
