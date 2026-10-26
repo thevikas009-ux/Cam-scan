@@ -131,17 +131,28 @@ if uploaded and st.session_state.ocr_data:
                     client = gspread.authorize(creds)
                     
                     spreadsheet = client.open_by_key(st.secrets["sheet_id"])
-                    st.write("📁 Connected Sheet Name:", spreadsheet.title)
-                    
                     sheet = spreadsheet.worksheet("Sheet1")
                     
                     names_list = ["Seal Integrity", "Robotics", "Cap and Clouser", "Induction Capsealing"]
                     bool_list = [o1, o2, o3, o4]
                     selected_opts = [name for name, val in zip(names_list, bool_list) if val]
                     
-                    row = [v_full, f"{v_name}.jpg", datetime.now().strftime("%Y-%m-%d %H:%M"), 
-                           v_comp, v_name, v_phone, v_email, "", v_addr, v_web, 
-                           ", ".join(selected_opts), v_rem, f'=HYPERLINK("{img_url}", "View Card Photo")']
+                    # Exact 13 columns matching your Google Sheet headers
+                    row = [
+                        v_full,                                         # 1. Full OCR Text
+                        f"{v_name}.jpg",                                # 2. File Name
+                        datetime.now().strftime("%Y-%m-%d %H:%M"),      # 3. Timestamp
+                        v_comp,                                         # 4. Company Name
+                        v_name,                                         # 5. Person Name
+                        v_phone,                                        # 6. Phone Number
+                        v_email,                                        # 7. Email ID
+                        "",                                             # 8. Designation (Blank placeholder)
+                        v_addr,                                         # 9. Office Address
+                        v_web,                                          # 10. Website
+                        ", ".join(selected_opts),                       # 11. Inspection Options
+                        v_rem,                                          # 12. Remarks
+                        f'=HYPERLINK("{img_url}", "View Card Photo")'   # 13. Drive Photo Link
+                    ]
                     
                     sheet.append_row(row, value_input_option="USER_ENTERED")
                     
