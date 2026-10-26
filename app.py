@@ -129,7 +129,9 @@ if uploaded and st.session_state.ocr_data:
                     
                     creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
                     client = gspread.authorize(creds)
-                    sheet = client.open_by_key(st.secrets["sheet_id"]).worksheet("Sheet1")
+                    spreadsheet = client.open_by_key(st.secrets["sheet_id"])
+st.write("📁 Connected Sheet Name:", spreadsheet.title)  # Yeh screen par Google Sheet ka naam dikhayega
+sheet = spreadsheet.worksheet("Sheet1")
                     
                     # --- FIX: Yahan poore naam likhe hain taaki sheet mein sahi jaye ---
                     names_list = ["Seal Integrity", "Robotics", "Cap and Clouser", "Induction Capsealing"]
